@@ -855,7 +855,7 @@ with tab1:
     # BASE ANALÍTICA
     # =====================================================
 
-    analitico = base.copy()
+    analitico = opp.copy()
 
     # =====================================================
     # RENOMEAR CONCESSIONÁRIA
