@@ -875,7 +875,7 @@ with tab1:
     }
 
     analitico["Concessionária"] = (
-        analitico["Concessionária (Conta) (Conta)"]
+        analitico["Concessionaria"]
         .replace(mapa_filiais)
     )
 
