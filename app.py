@@ -844,6 +844,100 @@ with tab1:
         height=500
     )
 
+    # =====================================================
+    # ANALÍTICO DE OPORTUNIDADES POR VENDEDOR
+    # =====================================================
+
+    st.markdown("---")
+    st.subheader("Analítico de Oportunidades Por Vendedor")
+
+    # =====================================================
+    # BASE ANALÍTICA
+    # =====================================================
+
+    analitico = base.copy()
+
+    # =====================================================
+    # RENOMEAR CONCESSIONÁRIA
+    # =====================================================
+
+    mapa_filiais = {
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - LINHARES": "LINHARES",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - VITORIA": "VITÓRIA",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - MONTES CLAROS": "MONTES CLAROS",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - GOIANA": "GOIANA",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - TEIXEIRA": "TEIXEIRA",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - POSTO DA MATA": "POSTO DA MATA",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - EUNAPOLIS": "EUNÁPOLIS",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - ALAGOINHAS": "ALAGOINHAS",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - TERESINA": "TERESINA",
+        "PME MAQUINAS E EQUIPAMENTOS LTDA - BOM JESUS": "BOM JESUS"
+    }
+
+    analitico["Concessionária"] = (
+        analitico["Concessionária (Conta) (Conta)"]
+        .replace(mapa_filiais)
+    )
+
+    # =====================================================
+    # SELEÇÃO DE COLUNAS
+    # =====================================================
+
+    colunas_analitico = {
+
+        "Data de Criação": "Data Criação",
+        "Conta": "Conta",
+        "Documento (BR: CPF/CNPJ) (Conta) (Conta)": "CPF/CNPJ",
+        "Vendedor (Conta) (Conta)": "Vendedor",
+        "Concessionária": "Filial",
+        "Proprietário": "Proprietário",
+        "Cliente impactado por Demonstração": "Demo",
+        "Linha do tempo": "Linha Tempo",
+        "Data de Previsão do Faturamento": "Prev. Faturamento",
+        "Status": "Status",
+        "Razão do Status": "Razão Status",
+        "Término da Vigência": "Fim Vigência",
+        "Data de Modificação": "Data Modificação",
+        "Criada Por": "Criado Por",
+        "Cálculo Total de Atividades": "Total Atividades",
+        "Criado pelo celular": "Criado Mobile",
+        "Evento": "Evento",
+        "Valor Total": "Valor Total"
+
+    }
+
+    # =====================================================
+    # DATAFRAME FINAL
+    # =====================================================
+
+    analitico_df = analitico[
+        list(colunas_analitico.keys())
+    ].rename(columns=colunas_analitico)
+
+    # =====================================================
+    # FORMATAÇÃO MONETÁRIA
+    # =====================================================
+
+    if "Valor Total" in analitico_df.columns:
+
+        analitico_df["Valor Total"] = (
+            pd.to_numeric(
+                analitico_df["Valor Total"],
+                errors="coerce"
+            )
+            .fillna(0)
+        )
+
+    # =====================================================
+    # EXIBIÇÃO
+    # =====================================================
+
+    st.dataframe(
+        analitico_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
     # =========================
     # TAB 2 - MAPA MUNICÍPIO
     # =========================
@@ -1186,268 +1280,6 @@ with tab3:
     ].copy()
 
     # =========================
-    # ACUMULADORES DE PONTUAÇÃO
-    # =========================
-
-    total_p_q1 = 0
-    total_p_q2 = 0
-    total_p_q3 = 0
-    total_p_q4 = 0
-
-    real_q1_total = 0
-    real_q2_total = 0
-    real_q3_total = 0
-    real_q4_total = 0
-
-    meta_q1_total = 0
-    meta_q2_total = 0
-    meta_q3_total = 0
-    meta_q4_total = 0
-
-    n_produtos = len(matriz_consultor)
-
-    # =========================
-    # STATUS CONSULTOR
-    # =========================
-    if len(matriz_consultor) > 0:
-
-        status_consultor = "ATIVO"
-
-        filial_consultor = (
-            matriz_consultor["Filial"]
-            .dropna()
-            .iloc[0]
-            if matriz_consultor["Filial"].dropna().shape[0] > 0
-            else "-"
-        )
-
-        regiao_consultor = (
-            matriz_consultor["Região"]
-            .dropna()
-            .iloc[0]
-            if matriz_consultor["Região"].dropna().shape[0] > 0
-            else "-"
-        )
-
-    else:
-
-        status_consultor = "INATIVO"
-
-        filial_consultor = "-"
-        regiao_consultor = "-"
-
-        # =====================================================
-        # HEADER EXECUTIVO
-        # =====================================================
-        st.markdown("---")
-
-        c1, c2, c3, c4 = st.columns(4)
-
-        # =====================================================
-        # CARD CONSULTOR
-        # =====================================================
-        with c1:
-
-            st.markdown(f"""
-            <div style='
-                background:#fafafa;
-                border:1px solid #e5e7eb;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-            '>
-
-                <div style='
-                    font-size:22px;
-                    font-weight:700;
-                    margin-bottom:12px;
-                '>
-                    {consultor_matriz}
-                </div>
-
-                <div style='font-size:14px;'>
-                    <b>Filial:</b> {filial_consultor}
-                </div>
-
-                <div style='font-size:14px; margin-top:4px;'>
-                    <b>Região:</b> {regiao_consultor}
-                </div>
-
-            </div>
-            """, unsafe_allow_html=True)
-
-        # =====================================================
-        # CARD PONTUAÇÃO
-        # =====================================================
-        with c2:
-
-            st.markdown(f"""
-            <div style='
-                background:#fafafa;
-                border:1px solid #e5e7eb;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-                text-align:center;
-            '>
-
-                <div style='
-                    font-size:14px;
-                    color:#666;
-                '>
-                    Pontuação Final
-                </div>
-
-                <div style='font-size:34px;font-weight:700;margin-top:12px;'>
-                    {media_pontuacao:.1f}
-                </div>
-
-            </div>
-            """, unsafe_allow_html=True)
-
-        # =====================================================
-        # CARD ELEGIBILIDADE
-        # =====================================================
-        with c3:
-
-            st.markdown("""
-            <div style='
-                background:#E3F2FD;
-                border:1px solid #BBDEFB;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-                text-align:center;
-            '>
-
-                <div style='
-                    font-size:14px;
-                    color:#666;
-                '>
-                    Elegibilidade
-                </div>
-
-                <div style='
-                    font-size:30px;
-                    font-weight:700;
-                    margin-top:12px;
-                '>
-                    SIM
-                </div>
-
-            </div>
-            """, unsafe_allow_html=True)
-
-        # =====================================================
-        # CARD STATUS
-        # =====================================================
-        with c4:
-
-            cor_status = (
-                "#2E7D32"
-                if status_consultor == "ATIVO"
-                else "#C62828"
-            )
-
-            st.markdown(f"""
-            <div style='
-                background:#fafafa;
-                border:1px solid #e5e7eb;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-                text-align:center;
-            '>
-
-                <div style='
-                    font-size:14px;
-                    color:#666;
-                '>
-                    Status Consultor
-                </div>
-
-                <div style='
-                    font-size:28px;
-                    font-weight:700;
-                    color:{cor_status};
-                    margin-top:12px;
-                '>
-                    {status_consultor}
-                </div>
-
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-    # =========================
-    # TOTALIZAÇÃO DE PONTOS
-    # =========================
-
-    total_pontos_possiveis = n_produtos * 10
-
-    total_pontos_obtidos = (
-        total_p_q1 +
-        total_p_q2 +
-        total_p_q3 +
-        total_p_q4
-    )
-
-    percentual_final = (
-        (total_pontos_obtidos / total_pontos_possiveis) * 100
-        if total_pontos_possiveis > 0
-        else 0
-    )
-
-    # =========================
-    # TOTALIZAÇÃO DE PONTOS
-    # =========================
-
-    total_pontos_possiveis = n_produtos * 10
-
-    total_pontos_obtidos = (
-        total_p_q1 +
-        total_p_q2 +
-        total_p_q3 +
-        total_p_q4
-    )
-
-    percentual_final = (
-        (total_pontos_obtidos / total_pontos_possiveis) * 100
-        if total_pontos_possiveis > 0
-        else 0
-    )
-
-    # =========================
-    # PONTUAÇÃO PONDERADA POR TRIMESTRE
-    # =========================
-
-    q1_final = (total_p_q1 / n_produtos) * 100 if n_produtos > 0 else 0
-    q2_final = (total_p_q2 / n_produtos) * 100 if n_produtos > 0 else 0
-    q3_final = (total_p_q3 / n_produtos) * 100 if n_produtos > 0 else 0
-    q4_final = (total_p_q4 / n_produtos) * 100 if n_produtos > 0 else 0
-
-    # =====================================================
-    # RESUMO TRIMESTRAL (CARDS)
-    # =====================================================
-    q1, q2, q3, q4, qf = st.columns(5)
-
-    with q1:
-        st.metric("Q1", f"{q1_final:.0f}")
-
-    with q2:
-        st.metric("Q2", f"{q2_final:.0f}")
-
-    with q3:
-        st.metric("Q3", f"{q3_final:.0f}")
-
-    with q4:
-        st.metric("Q4", f"{q4_final:.0f}")
-
-    with qf:
-        st.metric("FINAL", f"{percentual_final:.1f}")
-
-    # =========================
     # FUNÇÃO REALIZADO
     # =========================
     def buscar_realizado(
@@ -1469,22 +1301,15 @@ with tab3:
 
         return filtro["REALIZADO"].sum()
 
-
-
     # =====================================================
     # LOOP PRODUTOS
     # =====================================================
-    pontuacao_produtos = []
     for _, row in matriz_consultor.iterrows():
-
-        # =========================
-        # PERCENTUAL POR TRIMESTRE
-        # =========================
 
         produto = row["PRODUTO"]
 
         # =================================================
-        # VALORES
+        # VALORES META
         # =================================================
         jan = row["JAN"]
         fev = row["FEV"]
@@ -1591,26 +1416,6 @@ with tab3:
         real_q3 = r_jul + r_ago + r_set
         real_q4 = r_out + r_nov + r_dez
 
-        real_q1_total += real_q1
-        real_q2_total += real_q2
-        real_q3_total += real_q3
-        real_q4_total += real_q4
-
-        meta_q1_total += meta_q1
-        meta_q2_total += meta_q2
-        meta_q3_total += meta_q3
-        meta_q4_total += meta_q4
-
-        # =================================================
-        # DIFERENÇAS
-        # =================================================
-        dif_total = (
-            real_q1
-            + real_q2
-            + real_q3
-            + real_q4
-        ) - total_meta
-
         # =================================================
         # EXPANDER
         # =================================================
@@ -1692,80 +1497,37 @@ with tab3:
             # =============================================
             st.markdown("#### Diferença")
 
-            # DIFERENÇA (corrigido)
-            diferenca = realizado_df.iloc[0].subtract(meta_df.iloc[0], fill_value=0)
+            diferenca = realizado_df.iloc[0].subtract(
+                meta_df.iloc[0],
+                fill_value=0
+            )
 
-            diferenca_df = diferenca.to_frame().T.reset_index(drop=True)
+            diferenca_df = (
+                diferenca
+                .to_frame()
+                .T
+                .reset_index(drop=True)
+            )
 
             def highlight_trimestre(col):
-                if col.name in ["1 TRI", "2 TRI", "3 TRI", "4 TRI"]:
-                    return ["background-color: #c6c6c6; color: black; font-weight: bold"] * len(col)
+
+                if col.name in [
+                    "1 TRI",
+                    "2 TRI",
+                    "3 TRI",
+                    "4 TRI"
+                ]:
+
+                    return [
+                        "background-color: #c6c6c6; color: black; font-weight: bold"
+                    ] * len(col)
+
                 return [""] * len(col)
 
             st.dataframe(
-            diferenca_df.style
-            .format("{:.0f}")
-            .apply(highlight_trimestre, axis=0),
-            use_container_width=True,
-            hide_index=True
-        )
-
-            # =========================
-            # FUNÇÃO DE PONTUAÇÃO
-            # =========================
-            def calc_ponto(real, meta):
-                real = 0 if pd.isna(real) else real
-                meta = 0 if pd.isna(meta) else meta
-                return 10 if meta > 0 and real >= meta else 0
-
-            # =========================
-            # PONTUAÇÃO POR TRIMESTRE
-            # =========================
-            p_q1 = calc_ponto(real_q1, meta_q1)
-            p_q2 = calc_ponto(real_q2, meta_q2)
-            p_q3 = calc_ponto(real_q3, meta_q3)
-            p_q4 = calc_ponto(real_q4, meta_q4)
-
-            total_p_q1 += p_q1
-            total_p_q2 += p_q2
-            total_p_q3 += p_q3
-            total_p_q4 += p_q4
-
-            pontuacao_total_produto = p_q1 + p_q2 + p_q3 + p_q4
-
-            pontuacao_produtos.append({
-                "produto": produto,
-                "pontuacao": pontuacao_total_produto
-            })
-
-            pontos = {
-                "Q1": p_q1,
-                "Q2": p_q2,
-                "Q3": p_q3,
-                "Q4": p_q4
-            }
-
-            pontos_total = next((pontos[q] for q in ["Q4","Q3","Q2","Q1"] if pontos[q] is not None), 0)
-
-            score_df = pd.DataFrame({
-                "Q1": [p_q1],
-                "Q2": [p_q2],
-                "Q3": [p_q3],
-                "Q4": [p_q4],
-                "TOTAL": [pontos_total]
-            })
-
-            st.markdown("### Pontuação por Trimestre")
-
-            st.dataframe(
-                score_df,
+                diferenca_df.style
+                .format("{:.0f}")
+                .apply(highlight_trimestre, axis=0),
                 use_container_width=True,
                 hide_index=True
             )
-          
-# =====================================================
-# MÉDIA FINAL DO CONSULTOR
-# =====================================================
-
-df_score = pd.DataFrame(pontuacao_produtos)
-media_pontuacao = df_score["pontuacao"].mean() if not df_score.empty else 0
