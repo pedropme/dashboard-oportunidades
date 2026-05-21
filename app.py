@@ -1245,6 +1245,140 @@ with tab1:
             hide_index=True
         )
 
+        # =========================
+        # DESCRITIVO OPORTUNIDADES
+        # =========================
+        st.markdown("### Descritivo das Oportunidades")
+
+        # Respeita o rádio "somente em aberto"
+        if somente_abertas == "Somente em aberto":
+            df_detail_mun = opp_filtrada[
+                ~opp_filtrada["Status"]
+                .str.upper()
+                .str.contains("GANH|PERD", na=False)
+            ].copy()
+        else:
+            df_detail_mun = opp_filtrada.copy()
+
+        total_desc_mun = len(df_detail_mun)
+        st.markdown(
+            f"<span style='font-size:15px;'>Total de oportunidades: <b>{total_desc_mun:,}</b></span>".replace(",", "."),
+            unsafe_allow_html=True
+        )
+
+        # Normaliza CD_MUN e marca linhas sem município
+        df_detail_mun["CD_MUN"] = (
+            df_detail_mun["CD_MUN"].astype(str).str.strip()
+        )
+        df_detail_mun.loc[
+            df_detail_mun["CD_MUN"].isin(["nan", "None", ""]),
+            "CD_MUN"
+        ] = None
+        df_detail_mun["_usa_fallback"] = df_detail_mun["CD_MUN"].isna()
+
+        # Fallback: busca município pelo documento quando o vendedor não bate
+        base_mun_doc2 = (
+            clientes[[COL_DOC, COL_MUN]]
+            .drop_duplicates(subset=[COL_DOC])
+            .copy()
+        )
+        base_mun_doc2[COL_MUN] = (
+            base_mun_doc2[COL_MUN].astype(str).str.strip()
+        )
+        df_detail_mun = df_detail_mun.merge(
+            base_mun_doc2.rename(columns={COL_MUN: "CD_MUN_fallback"}),
+            on=COL_DOC,
+            how="left"
+        )
+        df_detail_mun.loc[
+            df_detail_mun["_usa_fallback"],
+            "CD_MUN"
+        ] = df_detail_mun.loc[
+            df_detail_mun["_usa_fallback"],
+            "CD_MUN_fallback"
+        ]
+
+        # Nomes de município
+        mun_nome2 = gdf_mun[["CD_MUN", "NM_MUN", "SIGLA_UF"]].copy()
+        mun_nome2["CD_MUN"] = mun_nome2["CD_MUN"].astype(str).str.strip()
+        df_detail_mun = df_detail_mun.merge(mun_nome2, on="CD_MUN", how="left")
+
+        # Filial/Região pelo vendedor da oportunidade (caminho primário)
+        df_detail_mun = df_detail_mun.merge(
+            dados_vendedor[[COL_VEND, "Filial", "Região"]],
+            on=COL_VEND,
+            how="left"
+        )
+
+        # Lookup do vendedor ativo por município (fallback)
+        territorio_por_mun2 = (
+            territorio[["Código IBGE", "NOME CRM", "Filial", "Região"]]
+            .drop_duplicates(subset=["Código IBGE"])
+            .copy()
+        )
+        territorio_por_mun2["Código IBGE"] = (
+            territorio_por_mun2["Código IBGE"].astype(str).str.strip()
+        )
+        territorio_por_mun2 = territorio_por_mun2.rename(columns={
+            "Código IBGE": "CD_MUN",
+            "NOME CRM": "Vendedor_Ativo",
+            "Filial": "Filial_Ativo",
+            "Região": "Região_Ativo"
+        })
+        df_detail_mun = df_detail_mun.merge(
+            territorio_por_mun2, on="CD_MUN", how="left"
+        )
+
+        # Sobrescreve vendedor/filial/região para linhas de fallback
+        fb2 = df_detail_mun["_usa_fallback"]
+        df_detail_mun.loc[fb2, COL_VEND] = df_detail_mun.loc[fb2, "Vendedor_Ativo"]
+        df_detail_mun.loc[fb2, "Filial"]  = df_detail_mun.loc[fb2, "Filial_Ativo"]
+        df_detail_mun.loc[fb2, "Região"]  = df_detail_mun.loc[fb2, "Região_Ativo"]
+
+        # Dias desde a criação
+        df_detail_mun["Dias desde Criação"] = (
+            pd.Timestamp.today() - df_detail_mun["Data de Criação"]
+        ).dt.days
+
+        # Valor Total em R$
+        df_detail_mun["Valor Total"] = df_detail_mun["Valor Total"].apply(
+            lambda x: (
+                "R$ " + f"{round(x):,}".replace(",", ".")
+                if pd.notna(x) else ""
+            )
+        )
+
+        tabela_desc_mun = (
+            df_detail_mun[
+                [
+                    "Data de Criação",
+                    "Cliente",
+                    COL_DOC,
+                    "NM_MUN",
+                    "SIGLA_UF",
+                    COL_VEND,
+                    "Filial",
+                    "Região",
+                    "Valor Total",
+                    "Dias desde Criação",
+                    "Criada Por"
+                ]
+            ]
+            .rename(columns={
+                COL_DOC: "Documento",
+                "NM_MUN": "Município",
+                "SIGLA_UF": "UF",
+                COL_VEND: "Vendedor"
+            })
+            .sort_values("Data de Criação", ascending=False)
+        )
+
+        st.dataframe(
+            tabela_desc_mun,
+            use_container_width=True,
+            hide_index=True
+        )
+
 # =========================
 # TAB 3 - MATRIZ
 # =========================
