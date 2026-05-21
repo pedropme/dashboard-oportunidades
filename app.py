@@ -2089,7 +2089,7 @@ with tab4:
             opp_funil.groupby(COL_RAZAO)
             .size()
             .reset_index(name="Quantidade")
-            .sort_values("Quantidade", ascending=False)
+            .sort_values(COL_RAZAO, ascending=True)
         )
         total_funil = funil_df["Quantidade"].sum()
         funil_df["%"] = (funil_df["Quantidade"] / total_funil * 100).round(1)
@@ -2101,7 +2101,7 @@ with tab4:
             .encode(
                 y=alt.Y(
                     f"{COL_RAZAO}:N",
-                    sort=alt.EncodingSortField(field="Quantidade", order="descending"),
+                    sort=alt.EncodingSortField(field=COL_RAZAO, order="descending"),
                     axis=alt.Axis(labelLimit=300, title=None)
                 ),
                 x=alt.X(
