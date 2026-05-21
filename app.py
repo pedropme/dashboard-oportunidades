@@ -52,7 +52,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Resumo por Vendedor",
     "🏙️ Resumo por Município",
     "📈 Matriz de Performance",
-    "🧪 DEBUG MAPA"
+    "🔽 Funil de Vendas"
 ])
 
 # =========================
@@ -315,51 +315,93 @@ realizado.columns = [
 ]
 
 # =========================
-# DEBUG COLUNAS
+# FUNIL DE VENDAS
 # =========================
 with tab4:
 
-    st.subheader("CLASSIFICAÇÃO PRODUTOS")
+    st.markdown("### Funil de Vendas — Oportunidades em Aberto")
 
-    st.dataframe(
-    vendas[
-        [
-            "Calc dim De Para Familia 2",
-            "Segmento Maq",
-            "Familia",
-            "Tipo Produto",
-            "Grupo Modelo",
-            "PRODUTO_MATRIZ"
-        ]
-    ]
-    .drop_duplicates()
-    .sort_values("PRODUTO_MATRIZ"),
-    use_container_width=True
-    )
+    # Filtra oportunidades em aberto respeitando sidebar
+    vendedores_funil = df_base[COL_VEND].dropna().unique()
+    opp_funil = opp[
+        opp[COL_VEND].isin(vendedores_funil)
+        & ~opp["Status"].str.upper().str.contains("GANH|PERD", na=False)
+    ].copy()
 
-    st.subheader("DEBUG BASE VENDAS")
+    if opp_funil.empty:
+        st.info("Nenhuma oportunidade em aberto para os filtros selecionados.")
+    else:
+        # Agrupa por Status
+        funil_df = (
+            opp_funil.groupby("Status")
+            .size()
+            .reset_index(name="Quantidade")
+            .sort_values("Quantidade", ascending=False)
+        )
+        total_funil = funil_df["Quantidade"].sum()
+        funil_df["%"] = (funil_df["Quantidade"] / total_funil * 100).round(1)
 
-    st.write("Colunas encontradas:")
+        # ── Gráfico horizontal (funil) ──────────────────────────────
+        chart = (
+            alt.Chart(funil_df)
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+            .encode(
+                y=alt.Y(
+                    "Status:N",
+                    sort=alt.EncodingSortField(field="Quantidade", order="descending"),
+                    axis=alt.Axis(labelLimit=300, title=None)
+                ),
+                x=alt.X(
+                    "Quantidade:Q",
+                    axis=alt.Axis(title="Quantidade de Oportunidades")
+                ),
+                color=alt.Color(
+                    "Quantidade:Q",
+                    scale=alt.Scale(scheme="blues"),
+                    legend=None
+                ),
+                tooltip=[
+                    alt.Tooltip("Status:N", title="Status"),
+                    alt.Tooltip("Quantidade:Q", title="Quantidade"),
+                    alt.Tooltip("%:Q", title="%", format=".1f")
+                ]
+            )
+            .properties(height=max(200, len(funil_df) * 45))
+        )
 
-    st.write(
-        list(vendas.columns)
-    )
+        # Rótulos com valor ao final de cada barra
+        text = chart.mark_text(
+            align="left",
+            dx=5,
+            color="#333"
+        ).encode(
+            text=alt.Text("Quantidade:Q")
+        )
 
-    st.write("Prévia da base:")
+        st.altair_chart(chart + text, use_container_width=True)
 
-    st.dataframe(
-        vendas.head(20),
-        use_container_width=True
-    )
+        st.markdown("---")
 
-    st.subheader("BASE REALIZADO")
+        # ── Tabela resumo ────────────────────────────────────────────
+        st.markdown(
+            f"<span style='font-size:15px;'>Total de oportunidades em aberto: "
+            f"<b>{total_funil:,}</b></span>".replace(",", "."),
+            unsafe_allow_html=True
+        )
 
-    st.dataframe(
-        realizado.sort_values(
-            ["CONSULTOR", "PRODUTO", "MES"]
-        ),
-        use_container_width=True
-    )
+        tabela_funil = funil_df.copy()
+        tabela_funil["%"] = tabela_funil["%"].apply(lambda x: f"{x:.1f}%".replace(".", ","))
+
+        st.dataframe(
+            tabela_funil.rename(columns={"Status": "Status", "Quantidade": "Qtd", "%": "%"}),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Status": st.column_config.TextColumn("Status", width="large"),
+                "Qtd": st.column_config.NumberColumn("Qtd", width="small"),
+                "%": st.column_config.TextColumn("%", width="small"),
+            }
+        )
 
 # =========================
 # RENOMEAR COLUNAS
