@@ -1890,6 +1890,42 @@ with tab3:
             ### {produto}
             """)
 
+            # Formatting helpers para este produto
+            is_monetary = produto in ["IMPLEMENTO", "USADOS"]
+
+            if is_monetary:
+                fmt_fn = lambda x: (
+                    "R$ " + f"{round(x):,}".replace(",", ".")
+                    if pd.notna(x) else ""
+                )
+            else:
+                fmt_fn = lambda x: f"{x:.0f}" if pd.notna(x) else ""
+
+            def highlight_tri(col):
+                if col.name in ["1 TRI", "2 TRI", "3 TRI", "4 TRI"]:
+                    return [
+                        "background-color: #d6d6d6; color: black; font-weight: bold"
+                    ] * len(col)
+                return [""] * len(col)
+
+            _cols17 = [
+                "Jan", "Fev", "Mar", "1 TRI",
+                "Abr", "Mai", "Jun", "2 TRI",
+                "Jul", "Ago", "Set", "3 TRI",
+                "Out", "Nov", "Dez", "4 TRI", "TOTAL"
+            ]
+            col_cfg_17 = {
+                c: st.column_config.TextColumn(c, width="small")
+                for c in _cols17
+            }
+            col_cfg_score = {
+                "Q1":    st.column_config.NumberColumn("Q1",    width="large"),
+                "Q2":    st.column_config.NumberColumn("Q2",    width="large"),
+                "Q3":    st.column_config.NumberColumn("Q3",    width="large"),
+                "Q4":    st.column_config.NumberColumn("Q4",    width="large"),
+                "TOTAL": st.column_config.NumberColumn("TOTAL", width="small"),
+            }
+
             # =============================================
             # META
             # =============================================
@@ -1916,9 +1952,12 @@ with tab3:
             })
 
             st.dataframe(
-                meta_df,
+                meta_df.style
+                .format(fmt_fn)
+                .apply(highlight_tri, axis=0),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config=col_cfg_17
             )
 
             # =============================================
@@ -1952,9 +1991,12 @@ with tab3:
             })
 
             st.dataframe(
-                realizado_df,
+                realizado_df.style
+                .format(fmt_fn)
+                .apply(highlight_tri, axis=0),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config=col_cfg_17
             )
 
             # =============================================
@@ -1967,18 +2009,14 @@ with tab3:
 
             diferenca_df = diferenca.to_frame().T.reset_index(drop=True)
 
-            def highlight_trimestre(col):
-                if col.name in ["1 TRI", "2 TRI", "3 TRI", "4 TRI"]:
-                    return ["background-color: #c6c6c6; color: black; font-weight: bold"] * len(col)
-                return [""] * len(col)
-
             st.dataframe(
-            diferenca_df.style
-            .format("{:.0f}")
-            .apply(highlight_trimestre, axis=0),
-            use_container_width=True,
-            hide_index=True
-        )
+                diferenca_df.style
+                .format(fmt_fn)
+                .apply(highlight_tri, axis=0),
+                use_container_width=True,
+                hide_index=True,
+                column_config=col_cfg_17
+            )
 
             # =========================
             # FUNÇÃO DE PONTUAÇÃO
@@ -2030,7 +2068,8 @@ with tab3:
             st.dataframe(
                 score_df,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config=col_cfg_score
             )
           
     # =====================================================
