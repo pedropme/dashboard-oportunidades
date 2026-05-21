@@ -917,6 +917,7 @@ with tab1:
                 COL_VEND,
                 "Filial",
                 "Região",
+                "Valor Total",
                 "Dias desde Criação",
                 "Dias em Aberto"
             ]
