@@ -403,21 +403,28 @@ clientes[COL_MUN] = (
 
 # =========================
 # CRUZAMENTO MUNICÍPIO
+# Chave inclui vendedor para garantir que, quando o mesmo
+# cliente está cadastrado para mais de um vendedor (com
+# municípios potencialmente diferentes), o município
+# resolvido seja o do vendedor da oportunidade.
 # =========================
 base_municipio = (
     clientes[
         [
             COL_DOC,
             COL_CONC,
+            COL_VEND,
             COL_MUN
         ]
     ]
-    .drop_duplicates()
+    .drop_duplicates(
+        subset=[COL_DOC, COL_CONC, COL_VEND]
+    )
 )
 
 opp = opp.merge(
     base_municipio,
-    on=[COL_DOC, COL_CONC],
+    on=[COL_DOC, COL_CONC, COL_VEND],
     how="left"
 )
 
@@ -842,6 +849,94 @@ with tab1:
         use_container_width=True,
         hide_index=True,
         height=500
+    )
+
+    # =========================
+    # TABELA DESCRITIVO OPORTUNIDADES
+    # =========================
+    st.markdown("### Descritivo das Oportunidades")
+
+    df_detail = df_funil.copy()
+
+    mun_nome = (
+        gdf_mun[["CD_MUN", "NM_MUN", "SIGLA_UF"]]
+        .copy()
+    )
+    mun_nome["CD_MUN"] = (
+        mun_nome["CD_MUN"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df_detail["CD_MUN"] = (
+        df_detail["CD_MUN"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df_detail = df_detail.merge(
+        mun_nome,
+        on="CD_MUN",
+        how="left"
+    )
+
+    df_detail = df_detail.merge(
+        dados_vendedor[[COL_VEND, "Filial", "Região"]],
+        on=COL_VEND,
+        how="left"
+    )
+
+    today = pd.Timestamp.today()
+
+    df_detail["Dias desde Criação"] = (
+        today - df_detail["Data de Criação"]
+    ).dt.days
+
+    mask_aberto = (
+        ~df_detail["Status"]
+        .str.upper()
+        .str.contains("GANH|PERD", na=False)
+    )
+
+    df_detail["Dias em Aberto"] = None
+    df_detail.loc[
+        mask_aberto,
+        "Dias em Aberto"
+    ] = df_detail.loc[
+        mask_aberto,
+        "Dias desde Criação"
+    ]
+
+    tabela_opp = (
+        df_detail[
+            [
+                "Cliente",
+                COL_DOC,
+                "NM_MUN",
+                "SIGLA_UF",
+                COL_VEND,
+                "Filial",
+                "Região",
+                "Dias desde Criação",
+                "Dias em Aberto"
+            ]
+        ]
+        .rename(columns={
+            COL_DOC: "Documento",
+            "NM_MUN": "Município",
+            "SIGLA_UF": "UF",
+            COL_VEND: "Vendedor"
+        })
+        .sort_values(
+            "Dias desde Criação",
+            ascending=True
+        )
+    )
+
+    st.dataframe(
+        tabela_opp,
+        use_container_width=True,
+        hide_index=True
     )
 
     # =========================
