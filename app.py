@@ -757,6 +757,7 @@ with tab1:
             "📊 Todas",
             on_click=set_filtro,
             args=("Todas",),
+            type="primary" if filtro_funil == "Todas" else "secondary",
             use_container_width=True
         )
 
@@ -765,6 +766,7 @@ with tab1:
             "✅ Ganhas",
             on_click=set_filtro,
             args=("Ganhas",),
+            type="primary" if filtro_funil == "Ganhas" else "secondary",
             use_container_width=True
         )
 
@@ -773,6 +775,7 @@ with tab1:
             "❌ Perdidas",
             on_click=set_filtro,
             args=("Perdidas",),
+            type="primary" if filtro_funil == "Perdidas" else "secondary",
             use_container_width=True
         )
 
@@ -781,6 +784,7 @@ with tab1:
             "🟡 Em Aberto",
             on_click=set_filtro,
             args=("Em Aberto",),
+            type="primary" if filtro_funil == "Em Aberto" else "secondary",
             use_container_width=True
         )
 
@@ -1361,6 +1365,10 @@ with tab3:
     meta_q4_total = 0
 
     n_produtos = len(matriz_consultor)
+
+    # Inicializado aqui para evitar NameError no bloco else
+    # (o valor correto é recalculado após o loop de produtos)
+    media_pontuacao = 0
 
     # =========================
     # STATUS CONSULTOR
