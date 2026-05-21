@@ -12,6 +12,18 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown("""
+<style>
+    .block-container {
+        padding-top: 0.5rem;
+        padding-bottom: 0rem;
+    }
+    [data-testid="stSidebarContent"] {
+        padding-top: 0.5rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # =========================
 # HEADER
 # =========================
