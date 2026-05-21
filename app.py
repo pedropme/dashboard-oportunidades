@@ -1929,13 +1929,6 @@ with tab3:
                 c: st.column_config.TextColumn(c, width="small")
                 for c in _cols17
             }
-            col_cfg_score = {
-                "Q1":    st.column_config.NumberColumn("Q1",    width="large"),
-                "Q2":    st.column_config.NumberColumn("Q2",    width="large"),
-                "Q3":    st.column_config.NumberColumn("Q3",    width="large"),
-                "Q4":    st.column_config.NumberColumn("Q4",    width="large"),
-                "TOTAL": st.column_config.NumberColumn("TOTAL", width="small"),
-            }
 
             # =============================================
             # META
@@ -2076,12 +2069,16 @@ with tab3:
 
             st.markdown("### Pontuação por Trimestre")
 
-            st.dataframe(
-                score_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config=col_cfg_score
-            )
+            # Proporção 4:4:4:4:1 = 17 partes, igual às 17 colunas
+            # das tabelas acima — Q1 alinha com Jan+Fev+Mar+1TRI
+            _sc = st.columns([4, 4, 4, 4, 1])
+            for _col, _lbl, _val in zip(
+                _sc,
+                ["Q1", "Q2", "Q3", "Q4", "TOTAL"],
+                [p_q1, p_q2, p_q3, p_q4, pontos_total]
+            ):
+                with _col:
+                    st.metric(_lbl, _val)
           
     # =====================================================
     # PONTUAÇÃO PONDERADA POR TRIMESTRE (calculada pós-loop)
