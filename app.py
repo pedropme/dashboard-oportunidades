@@ -2072,6 +2072,8 @@ with tab4:
 
     st.markdown("### Funil de Vendas — Oportunidades em Aberto")
 
+    COL_RAZAO = "Razão do Status"
+
     # Filtra oportunidades em aberto respeitando sidebar
     vendedores_funil = df_base[COL_VEND].dropna().unique()
     opp_funil = opp[
@@ -2082,9 +2084,9 @@ with tab4:
     if opp_funil.empty:
         st.info("Nenhuma oportunidade em aberto para os filtros selecionados.")
     else:
-        # Agrupa por Status
+        # Agrupa por Razão do Status
         funil_df = (
-            opp_funil.groupby("Status")
+            opp_funil.groupby(COL_RAZAO)
             .size()
             .reset_index(name="Quantidade")
             .sort_values("Quantidade", ascending=False)
@@ -2098,7 +2100,7 @@ with tab4:
             .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
             .encode(
                 y=alt.Y(
-                    "Status:N",
+                    f"{COL_RAZAO}:N",
                     sort=alt.EncodingSortField(field="Quantidade", order="descending"),
                     axis=alt.Axis(labelLimit=300, title=None)
                 ),
@@ -2112,7 +2114,7 @@ with tab4:
                     legend=None
                 ),
                 tooltip=[
-                    alt.Tooltip("Status:N", title="Status"),
+                    alt.Tooltip(f"{COL_RAZAO}:N", title="Razão do Status"),
                     alt.Tooltip("Quantidade:Q", title="Quantidade"),
                     alt.Tooltip("%:Q", title="%", format=".1f")
                 ]
@@ -2144,11 +2146,11 @@ with tab4:
         tabela_funil["%"] = tabela_funil["%"].apply(lambda x: f"{x:.1f}%".replace(".", ","))
 
         st.dataframe(
-            tabela_funil.rename(columns={"Status": "Status", "Quantidade": "Qtd", "%": "%"}),
+            tabela_funil.rename(columns={COL_RAZAO: "Razão do Status", "Quantidade": "Qtd"}),
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Status": st.column_config.TextColumn("Status", width="large"),
+                "Razão do Status": st.column_config.TextColumn("Razão do Status", width="large"),
                 "Qtd": st.column_config.NumberColumn("Qtd", width="small"),
                 "%": st.column_config.TextColumn("%", width="small"),
             }
