@@ -27,10 +27,26 @@ st.markdown("""
 # =========================
 # HEADER
 # =========================
-st.markdown(
-    "<h1 style='text-align:center;'>Resumo de Oportunidades</h1>",
-    unsafe_allow_html=True
-)
+col_logo_h, col_title_h = st.columns([1, 5])
+
+with col_logo_h:
+    st.image("dados/logo_pme.png", use_container_width=True)
+    st.markdown(
+        """<div style='
+            text-align:center;
+            font-size:14px;
+            font-weight:300;
+            color:#555;
+            margin-top:2px;
+        '>Projeto Horizonte</div>""",
+        unsafe_allow_html=True
+    )
+
+with col_title_h:
+    st.markdown(
+        "<h1 style='text-align:center; margin-top:20px;'>Resumo de Oportunidades</h1>",
+        unsafe_allow_html=True
+    )
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Resumo por Vendedor",
@@ -561,23 +577,6 @@ dashboard.drop(
 # =========================
 # SIDEBAR
 # =========================
-st.sidebar.image(
-    "dados/logo_pme.png",
-    use_container_width=True
-)
-
-st.sidebar.markdown(
-    """
-    <div style='
-        text-align:center;
-        font-size:16px;
-        font-weight:200'>
-        Projeto Horizonte
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
 st.sidebar.title("Filtros")
 
 regiao = st.sidebar.selectbox(
