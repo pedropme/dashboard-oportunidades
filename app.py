@@ -1455,11 +1455,31 @@ with tab3:
             matriz["Filial"] == filial
         ]
 
+    # O sidebar usa NOME CRM; a base de metas usa NOME BI.
+    # A base território relaciona os dois — fazemos o mapeamento aqui.
     if vendedor != "Todos":
 
-        matriz = matriz[
-            matriz["CONSULTOR"] == vendedor
+        mapa_crm_bi = (
+            territorio[["NOME CRM", "NOME BI"]]
+            .drop_duplicates(subset=["NOME CRM"])
+        )
+
+        match_bi = mapa_crm_bi[
+            mapa_crm_bi["NOME CRM"] == vendedor
         ]
+
+        vendedor_bi = (
+            match_bi["NOME BI"].iloc[0]
+            if not match_bi.empty
+            else vendedor
+        )
+
+        matriz = matriz[
+            matriz["CONSULTOR"] == vendedor_bi
+        ]
+
+    else:
+        vendedor_bi = "Todos"
 
     # =====================================================
     # SELECT CONSULTOR
@@ -1477,10 +1497,10 @@ with tab3:
         )
         st.stop()
 
-    # Pré-seleciona o vendedor escolhido no sidebar, se existir na lista
+    # Pré-seleciona usando o nome BI (que é como aparece na lista)
     default_idx = 0
-    if vendedor != "Todos" and vendedor in lista_consultores:
-        default_idx = lista_consultores.index(vendedor)
+    if vendedor_bi != "Todos" and vendedor_bi in lista_consultores:
+        default_idx = lista_consultores.index(vendedor_bi)
 
     consultor_matriz = st.selectbox(
         "Consultor",
@@ -2016,10 +2036,12 @@ with tab3:
     # =====================================================
     # PONTUAÇÃO PONDERADA POR TRIMESTRE (calculada pós-loop)
     # =====================================================
-    q1_final = (total_p_q1 / n_produtos) * 100 if n_produtos > 0 else 0
-    q2_final = (total_p_q2 / n_produtos) * 100 if n_produtos > 0 else 0
-    q3_final = (total_p_q3 / n_produtos) * 100 if n_produtos > 0 else 0
-    q4_final = (total_p_q4 / n_produtos) * 100 if n_produtos > 0 else 0
+    # Máximo por trimestre = n_produtos × 10 pts
+    # q_final = (pontos_obtidos / máximo) × 100
+    q1_final = (total_p_q1 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
+    q2_final = (total_p_q2 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
+    q3_final = (total_p_q3 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
+    q4_final = (total_p_q4 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
 
     with col_q1:
         st.metric("Q1", f"{q1_final:.0f}")
