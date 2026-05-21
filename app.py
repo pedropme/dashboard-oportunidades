@@ -858,6 +858,48 @@ with tab1:
 
     df_detail = df_funil.copy()
 
+    # Normaliza CD_MUN e marca linhas sem município
+    df_detail["CD_MUN"] = (
+        df_detail["CD_MUN"]
+        .astype(str)
+        .str.strip()
+    )
+    df_detail.loc[
+        df_detail["CD_MUN"].isin(["nan", "None", ""]),
+        "CD_MUN"
+    ] = None
+
+    # Flag que viaja com o DataFrame através dos merges
+    df_detail["_usa_fallback"] = df_detail["CD_MUN"].isna()
+
+    # Fallback: quando o vendedor da oportunidade não bate com nenhum
+    # cadastro ativo do cliente, busca o município pelo documento apenas
+    base_mun_doc = (
+        clientes[[COL_DOC, COL_MUN]]
+        .drop_duplicates(subset=[COL_DOC])
+        .copy()
+    )
+    base_mun_doc[COL_MUN] = (
+        base_mun_doc[COL_MUN]
+        .astype(str)
+        .str.strip()
+    )
+
+    df_detail = df_detail.merge(
+        base_mun_doc.rename(columns={COL_MUN: "CD_MUN_fallback"}),
+        on=COL_DOC,
+        how="left"
+    )
+
+    df_detail.loc[
+        df_detail["_usa_fallback"],
+        "CD_MUN"
+    ] = df_detail.loc[
+        df_detail["_usa_fallback"],
+        "CD_MUN_fallback"
+    ]
+
+    # Nomes de município
     mun_nome = (
         gdf_mun[["CD_MUN", "NM_MUN", "SIGLA_UF"]]
         .copy()
@@ -868,44 +910,63 @@ with tab1:
         .str.strip()
     )
 
-    df_detail["CD_MUN"] = (
-        df_detail["CD_MUN"]
-        .astype(str)
-        .str.strip()
-    )
-
     df_detail = df_detail.merge(
         mun_nome,
         on="CD_MUN",
         how="left"
     )
 
+    # Filial/Região pelo vendedor da oportunidade (caminho primário)
     df_detail = df_detail.merge(
         dados_vendedor[[COL_VEND, "Filial", "Região"]],
         on=COL_VEND,
         how="left"
     )
 
-    today = pd.Timestamp.today()
+    # Lookup do vendedor ativo por município (usado no fallback)
+    territorio_por_mun = (
+        territorio[["Código IBGE", "NOME CRM", "Filial", "Região"]]
+        .drop_duplicates(subset=["Código IBGE"])
+        .copy()
+    )
+    territorio_por_mun["Código IBGE"] = (
+        territorio_por_mun["Código IBGE"]
+        .astype(str)
+        .str.strip()
+    )
+    territorio_por_mun = territorio_por_mun.rename(columns={
+        "Código IBGE": "CD_MUN",
+        "NOME CRM": "Vendedor_Ativo",
+        "Filial": "Filial_Ativo",
+        "Região": "Região_Ativo"
+    })
 
+    df_detail = df_detail.merge(
+        territorio_por_mun,
+        on="CD_MUN",
+        how="left"
+    )
+
+    # Para linhas de fallback: sobrescreve vendedor, filial e região
+    # com os dados do vendedor ativo responsável pelo município
+    fb = df_detail["_usa_fallback"]
+    df_detail.loc[fb, COL_VEND] = df_detail.loc[fb, "Vendedor_Ativo"]
+    df_detail.loc[fb, "Filial"] = df_detail.loc[fb, "Filial_Ativo"]
+    df_detail.loc[fb, "Região"] = df_detail.loc[fb, "Região_Ativo"]
+
+    # Dias desde a criação
+    today = pd.Timestamp.today()
     df_detail["Dias desde Criação"] = (
         today - df_detail["Data de Criação"]
     ).dt.days
 
-    mask_aberto = (
-        ~df_detail["Status"]
-        .str.upper()
-        .str.contains("GANH|PERD", na=False)
+    # Valor Total formatado em R$ com separador de milhar
+    df_detail["Valor Total"] = df_detail["Valor Total"].apply(
+        lambda x: (
+            "R$ " + f"{round(x):,}".replace(",", ".")
+            if pd.notna(x) else ""
+        )
     )
-
-    df_detail["Dias em Aberto"] = None
-    df_detail.loc[
-        mask_aberto,
-        "Dias em Aberto"
-    ] = df_detail.loc[
-        mask_aberto,
-        "Dias desde Criação"
-    ]
 
     tabela_opp = (
         df_detail[
@@ -919,7 +980,6 @@ with tab1:
                 "Região",
                 "Valor Total",
                 "Dias desde Criação",
-                "Dias em Aberto"
             ]
         ]
         .rename(columns={
