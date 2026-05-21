@@ -1468,11 +1468,24 @@ with tab3:
         matriz["CONSULTOR"]
         .dropna()
         .unique()
+        .tolist()
     )
+
+    if not lista_consultores:
+        st.warning(
+            "Nenhum consultor ativo encontrado para os filtros selecionados."
+        )
+        st.stop()
+
+    # Pré-seleciona o vendedor escolhido no sidebar, se existir na lista
+    default_idx = 0
+    if vendedor != "Todos" and vendedor in lista_consultores:
+        default_idx = lista_consultores.index(vendedor)
 
     consultor_matriz = st.selectbox(
         "Consultor",
-        lista_consultores
+        lista_consultores,
+        index=default_idx
     )
 
     matriz_consultor = matriz[
@@ -1678,72 +1691,11 @@ with tab3:
 
         st.markdown("---")
 
-    # =========================
-    # TOTALIZAÇÃO DE PONTOS
-    # =========================
-
-    total_pontos_possiveis = n_produtos * 10
-
-    total_pontos_obtidos = (
-        total_p_q1 +
-        total_p_q2 +
-        total_p_q3 +
-        total_p_q4
-    )
-
-    percentual_final = (
-        (total_pontos_obtidos / total_pontos_possiveis) * 100
-        if total_pontos_possiveis > 0
-        else 0
-    )
-
-    # =========================
-    # TOTALIZAÇÃO DE PONTOS
-    # =========================
-
-    total_pontos_possiveis = n_produtos * 10
-
-    total_pontos_obtidos = (
-        total_p_q1 +
-        total_p_q2 +
-        total_p_q3 +
-        total_p_q4
-    )
-
-    percentual_final = (
-        (total_pontos_obtidos / total_pontos_possiveis) * 100
-        if total_pontos_possiveis > 0
-        else 0
-    )
-
-    # =========================
-    # PONTUAÇÃO PONDERADA POR TRIMESTRE
-    # =========================
-
-    q1_final = (total_p_q1 / n_produtos) * 100 if n_produtos > 0 else 0
-    q2_final = (total_p_q2 / n_produtos) * 100 if n_produtos > 0 else 0
-    q3_final = (total_p_q3 / n_produtos) * 100 if n_produtos > 0 else 0
-    q4_final = (total_p_q4 / n_produtos) * 100 if n_produtos > 0 else 0
-
     # =====================================================
-    # RESUMO TRIMESTRAL (CARDS)
+    # RESUMO TRIMESTRAL — posição fixada aqui na UI,
+    # métricas preenchidas após o loop de produtos
     # =====================================================
-    q1, q2, q3, q4, qf = st.columns(5)
-
-    with q1:
-        st.metric("Q1", f"{q1_final:.0f}")
-
-    with q2:
-        st.metric("Q2", f"{q2_final:.0f}")
-
-    with q3:
-        st.metric("Q3", f"{q3_final:.0f}")
-
-    with q4:
-        st.metric("Q4", f"{q4_final:.0f}")
-
-    with qf:
-        st.metric("FINAL", f"{percentual_final:.1f}")
+    col_q1, col_q2, col_q3, col_q4, col_qf = st.columns(5)
 
     # =========================
     # FUNÇÃO REALIZADO
@@ -2061,6 +2013,29 @@ with tab3:
                 hide_index=True
             )
           
+    # =====================================================
+    # PONTUAÇÃO PONDERADA POR TRIMESTRE (calculada pós-loop)
+    # =====================================================
+    q1_final = (total_p_q1 / n_produtos) * 100 if n_produtos > 0 else 0
+    q2_final = (total_p_q2 / n_produtos) * 100 if n_produtos > 0 else 0
+    q3_final = (total_p_q3 / n_produtos) * 100 if n_produtos > 0 else 0
+    q4_final = (total_p_q4 / n_produtos) * 100 if n_produtos > 0 else 0
+
+    with col_q1:
+        st.metric("Q1", f"{q1_final:.0f}")
+
+    with col_q2:
+        st.metric("Q2", f"{q2_final:.0f}")
+
+    with col_q3:
+        st.metric("Q3", f"{q3_final:.0f}")
+
+    with col_q4:
+        st.metric("Q4", f"{q4_final:.0f}")
+
+    with col_qf:
+        st.metric("FINAL", "0")
+
 # =====================================================
 # MÉDIA FINAL DO CONSULTOR
 # =====================================================
