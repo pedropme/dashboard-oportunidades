@@ -2048,26 +2048,21 @@ with tab4:
         else:
             grand_total_prod = len(rel_funil)
 
-            if por_familia:
-                group_col = "Família Exibida"
-                # ordena por total decrescente na vista família
-                ordem_fam = (
-                    rel_funil.groupby("Família Exibida").size()
-                    .sort_values(ascending=True).index.tolist()
-                )
-            else:
-                group_col = "Razão do Status"
+            # Eixo Y sempre = Razão do Status
+            # Cor: Categoria (padrão) ou Família Exibida (por_familia)
+            cor_col = "Família Exibida" if por_familia else "Categoria"
+            y_sort  = alt.EncodingSortField(field="Razão do Status", order="descending")
 
             prod_df = (
-                rel_funil.groupby([group_col, "Categoria"])
+                rel_funil.groupby(["Razão do Status", cor_col])
                 .size()
                 .reset_index(name="Quantidade")
             )
             prod_df["% Total"] = (prod_df["Quantidade"] / grand_total_prod * 100).round(1)
 
-            # Totais por grupo (rótulo no final da barra + sort)
+            # Totais por razão (rótulo no final da barra)
             totais_grupo = (
-                prod_df.groupby(group_col)["Quantidade"]
+                prod_df.groupby("Razão do Status")["Quantidade"]
                 .sum().reset_index(name="Total")
             )
             totais_grupo["% Total"] = (totais_grupo["Total"] / grand_total_prod * 100).round(1)
@@ -2075,18 +2070,28 @@ with tab4:
                 lambda x: f"{x:.1f}%".replace(".", ",")
             )
 
-            # Ordem do eixo Y
+            # Paleta de cores
             if por_familia:
-                y_sort = ordem_fam          # lista explícita, menor→topo
+                color_enc = alt.Color(
+                    f"{cor_col}:N",
+                    legend=alt.Legend(title="Família", symbolLimit=40)
+                )
             else:
-                y_sort = alt.EncodingSortField(field=group_col, order="descending")
+                color_enc = alt.Color(
+                    f"{cor_col}:N",
+                    scale=alt.Scale(
+                        domain=["Produto", "Implementos / Acessórios"],
+                        range=["#1565C0", "#E65100"]
+                    ),
+                    legend=alt.Legend(title="Tipo")
+                )
 
             chart_prod = (
                 alt.Chart(prod_df)
                 .mark_bar(cornerRadiusTopRight=3, cornerRadiusBottomRight=3)
                 .encode(
                     y=alt.Y(
-                        f"{group_col}:N",
+                        "Razão do Status:N",
                         sort=y_sort,
                         axis=alt.Axis(labelLimit=300, title=None)
                     ),
@@ -2095,29 +2100,22 @@ with tab4:
                         stack="zero",
                         axis=alt.Axis(title="Quantidade")
                     ),
-                    color=alt.Color(
-                        "Categoria:N",
-                        scale=alt.Scale(
-                            domain=["Produto", "Implementos / Acessórios"],
-                            range=["#1565C0", "#E65100"]
-                        ),
-                        legend=alt.Legend(title="Tipo")
-                    ),
+                    color=color_enc,
                     tooltip=[
-                        alt.Tooltip(f"{group_col}:N", title=group_col),
-                        alt.Tooltip("Categoria:N", title="Categoria"),
-                        alt.Tooltip("Quantidade:Q", title="Quantidade"),
-                        alt.Tooltip("% Total:Q", title="% do Total", format=".1f"),
+                        alt.Tooltip("Razão do Status:N", title="Razão do Status"),
+                        alt.Tooltip(f"{cor_col}:N",      title=cor_col),
+                        alt.Tooltip("Quantidade:Q",       title="Quantidade"),
+                        alt.Tooltip("% Total:Q",          title="% do Total", format=".1f"),
                     ]
                 )
-                .properties(height=max(200, prod_df[group_col].nunique() * 40))
+                .properties(height=max(200, prod_df["Razão do Status"].nunique() * 45))
             )
 
             text_prod = (
                 alt.Chart(totais_grupo)
                 .mark_text(align="left", dx=5, color="#333", fontSize=12)
                 .encode(
-                    y=alt.Y(f"{group_col}:N", sort=y_sort),
+                    y=alt.Y("Razão do Status:N", sort=y_sort),
                     x=alt.X("Total:Q", stack="zero"),
                     text=alt.Text("Label %:N")
                 )
