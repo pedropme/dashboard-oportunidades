@@ -5,6 +5,7 @@ import altair as alt
 import geopandas as gpd
 import os
 import datetime
+import subprocess
 
 # =========================
 # CONFIG
@@ -385,6 +386,19 @@ vendedor = st.sidebar.selectbox(
 
 # ── Datas de atualização ──────────────────────────────────
 def _data_mod(path):
+    # Usa git log para pegar a data do último commit que alterou o arquivo.
+    # Funciona tanto localmente quanto no Streamlit Cloud.
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%cs", "--", path],
+            capture_output=True, text=True
+        )
+        date_str = result.stdout.strip()
+        if date_str:
+            return datetime.datetime.strptime(date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        pass
+    # fallback: data de modificação do sistema de arquivos
     try:
         ts = os.path.getmtime(path)
         return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
