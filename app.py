@@ -386,7 +386,7 @@ vendedor = st.sidebar.selectbox(
 # ── Datas de atualização ──────────────────────────────────
 def _data_mod(path):
     try:
-        ts = os.path.getctime(path)
+        ts = os.path.getmtime(path)
         return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
     except Exception:
         return "—"
@@ -776,6 +776,13 @@ with tab1:
         )
     )
 
+    # Criador: "Criado pelo celular" se preenchido, senão "Criada Por"
+    _cel = df_detail["Criado pelo celular"].astype(str).str.strip()
+    df_detail["Criador"] = _cel.where(
+        ~_cel.isin(["", "nan", "None"]),
+        df_detail["Criada Por"].fillna("")
+    )
+
     tabela_opp = (
         df_detail[
             [
@@ -788,6 +795,7 @@ with tab1:
                 "Região",
                 "Valor Total",
                 "Dias desde Criação",
+                "Criador",
             ]
         ]
         .rename(columns={
@@ -1152,6 +1160,13 @@ with tab1:
             )
         )
 
+        # Criador: "Criado pelo celular" se preenchido, senão "Criada Por"
+        _cel2 = df_detail_mun["Criado pelo celular"].astype(str).str.strip()
+        df_detail_mun["Criador"] = _cel2.where(
+            ~_cel2.isin(["", "nan", "None"]),
+            df_detail_mun["Criada Por"].fillna("")
+        )
+
         tabela_desc_mun = (
             df_detail_mun[
                 [
@@ -1165,7 +1180,7 @@ with tab1:
                     "Região",
                     "Valor Total",
                     "Dias desde Criação",
-                    "Criada Por"
+                    "Criador"
                 ]
             ]
             .rename(columns={
