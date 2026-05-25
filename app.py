@@ -2230,6 +2230,8 @@ with tab4:
         if rel_funil.empty:
             st.info("Nenhum produto encontrado para os filtros selecionados.")
         else:
+            grand_total_prod = len(rel_funil)
+
             if por_familia:
                 group_col = "Família Exibida"
             else:
@@ -2240,6 +2242,24 @@ with tab4:
                 .size()
                 .reset_index(name="Quantidade")
                 .sort_values(group_col, ascending=True)
+            )
+            prod_df["% Total"] = (prod_df["Quantidade"] / grand_total_prod * 100).round(1)
+            prod_df["Label"] = (
+                prod_df["Quantidade"].astype(str)
+                + " ("
+                + prod_df["% Total"].apply(lambda x: f"{x:.1f}".replace(".", ","))
+                + "%)"
+            )
+
+            # Totais por grupo (para rótulo no final da barra empilhada)
+            totais_grupo = (
+                prod_df.groupby(group_col)["Quantidade"]
+                .sum()
+                .reset_index(name="Total")
+            )
+            totais_grupo["% Total"] = (totais_grupo["Total"] / grand_total_prod * 100).round(1)
+            totais_grupo["Label %"] = totais_grupo["% Total"].apply(
+                lambda x: f"{x:.1f}%".replace(".", ",")
             )
 
             chart_prod = (
@@ -2267,9 +2287,43 @@ with tab4:
                         alt.Tooltip(f"{group_col}:N", title=group_col),
                         alt.Tooltip("Categoria:N", title="Categoria"),
                         alt.Tooltip("Quantidade:Q", title="Quantidade"),
+                        alt.Tooltip("% Total:Q", title="% do Total", format=".1f"),
                     ]
                 )
                 .properties(height=max(200, prod_df[group_col].nunique() * 45))
             )
 
-            st.altair_chart(chart_prod, use_container_width=True)
+            # Rótulo no final de cada barra (total do grupo + %)
+            text_prod = (
+                alt.Chart(totais_grupo)
+                .mark_text(align="left", dx=5, color="#333", fontSize=12)
+                .encode(
+                    y=alt.Y(
+                        f"{group_col}:N",
+                        sort=alt.EncodingSortField(field=group_col, order="descending")
+                    ),
+                    x=alt.X("Total:Q", stack="zero"),
+                    text=alt.Text("Label %:N")
+                )
+            )
+
+            st.altair_chart(chart_prod + text_prod, use_container_width=True)
+
+            # ── Resumo Produto vs Implementos ─────────────────────────
+            if not por_familia:
+                resumo_cat = (
+                    prod_df.groupby("Categoria")[["Quantidade", "% Total"]]
+                    .sum()
+                    .reset_index()
+                )
+                c_prod, c_impl = st.columns(2)
+                for col_m, cat in zip([c_prod, c_impl], ["Produto", "Implementos / Acessórios"]):
+                    row = resumo_cat[resumo_cat["Categoria"] == cat]
+                    qtd  = int(row["Quantidade"].iloc[0]) if not row.empty else 0
+                    perc = float(row["% Total"].iloc[0])  if not row.empty else 0.0
+                    with col_m:
+                        st.metric(
+                            label=cat,
+                            value=f"{qtd:,}".replace(",", "."),
+                            delta=f"{perc:.1f}%".replace(".", ",")
+                        )
