@@ -60,26 +60,11 @@ def load_municipios():
 gdf_mun = load_municipios()
 
 # =========================
-# BASES
-# =========================
-clientes = pd.read_excel("dados/clientes.xlsx")
-opp = pd.read_excel("dados/oportunidades.xlsx")
-territorio = pd.read_excel("dados/territorio.xlsx")
-
-# =========================
-# BASE VENDAS
-# =========================
-vendas = pd.read_excel(
-    "dados/vendas.xlsx"
-)
-
-
-# =========================
 # PADRÃO DE COLUNAS
 # =========================
-COL_DOC = "Documento"
+COL_DOC  = "Documento"
 COL_CONC = "Concessionaria"
-COL_MUN = "CD_MUN"
+COL_MUN  = "CD_MUN"
 COL_VEND = "Vendedor"
 
 # =========================
@@ -98,289 +83,110 @@ def normalizar(col):
     )
 
 # =========================
-# BASE RELATÓRIO PRODUTOS
-# =========================
-rel_prod = pd.read_excel(
-    "dados/Relatorio de Oportunidades e Produtos.xlsx",
-    usecols=[2, 3, 4, 5, 13, 20, 33, 35, 47]
-)
-rel_prod.columns = [
-    "Cliente", COL_DOC, COL_CONC, COL_VEND,
-    "Data de Criação", "Razão do Status", "Tipo de Produto", "Família", "Tipo de Adicional"
-]
-rel_prod[COL_VEND] = normalizar(rel_prod[COL_VEND])
-rel_prod["Data de Criação"] = pd.to_datetime(rel_prod["Data de Criação"], dayfirst=True, errors="coerce")
-
-# =========================
-# NORMALIZAÇÃO VENDAS
-# =========================
-vendas["Segmento Maq"] = normalizar(
-    vendas["Segmento Maq"].astype(str)
-)
-
-vendas["Familia"] = normalizar(
-    vendas["Familia"].astype(str)
-)
-
-vendas["Tipo Produto"] = normalizar(
-    vendas["Tipo Produto"].astype(str)
-)
-
-vendas["Grupo Modelo"] = normalizar(
-    vendas["Grupo Modelo"].astype(str)
-)
-
-vendas["Vendedor"] = normalizar(
-    vendas["Vendedor"]
-)
-
-vendas["Calc dim De Para Familia 2"] = normalizar(
-    vendas["Calc dim De Para Familia 2"].astype(str)
-)
-
-# =========================
 # CLASSIFICAÇÃO PRODUTOS
 # =========================
 def classificar_produto(row):
-
-    de_para = row["Calc dim De Para Familia 2"]
+    de_para  = row["Calc dim De Para Familia 2"]
     segmento = row["Segmento Maq"]
-    familia = row["Familia"]
-    tipo = row["Tipo Produto"]
-    grupo = row["Grupo Modelo"]
-
-    # =====================
-    # TRATOR
-    # =====================
-    if "TRATOR" in de_para:
-        return "TRATOR"
-
-    # =====================
-    # VEÍCULOS OFF ROAD
-    # =====================
-    if "VEICULOS OFF ROAD" in segmento:
-        return "VEICULOS OFF ROAD"
-
-    # =====================
-    # IMPLEMENTOS
-    # =====================
-    if "IMPLEMENTO" in familia:
-        return "IMPLEMENTO"
-
-    # =====================
-    # USADOS
-    # =====================
-    if "USADO" in familia:
-        return "USADOS"
-
-    # =====================
-    # EMPILHADEIRA
-    # =====================
-    if "EMPILHADEIRA" in familia:
-        return "EMPILHADEIRA"
-
-    # =====================
-    # PLATAFORMA
-    # =====================
-    if "PLATAFORMA" in familia:
-        return "PLATAFORMA"
-
-    # =====================
-    # DRONE
-    # =====================
-    if "DRONE" in tipo:
-        return "DRONE"
-
-    # =====================
-    # RECOLHEDORA AUTOMOTRIZ
-    # =====================
-    if "RECOLHEDORA AUTOMOTRIZ" in tipo:
-        return "RECOLHEDORA AUTOMOTRIZ"
-
-    # =====================
-    # CR
-    # =====================
-    if "MASTER CAFE" in grupo:
-        return "CR"
-
-    # =====================
-    # 2 CR
-    # =====================
-    if "2 CR" in grupo:
-        return "2 CR"
-
-    # =====================
-    # MASTER GRAOS
-    # =====================
-    if "MASTER GRAOS" in grupo:
-        return "MASTER GRAOS"
-
-    # =====================
-    # PULVERIZADOR
-    # =====================
-    if "PULVERIZADOR" in grupo:
-        return "PULVERIZADOR"
-
-    # =====================
-    # PLANTADEIRA
-    # =====================
-    if "PLANTADEIRA" in grupo:
-        return "PLANTADEIRA"
-
+    familia  = row["Familia"]
+    tipo     = row["Tipo Produto"]
+    grupo    = row["Grupo Modelo"]
+    if "TRATOR"               in de_para:  return "TRATOR"
+    if "VEICULOS OFF ROAD"    in segmento: return "VEICULOS OFF ROAD"
+    if "IMPLEMENTO"           in familia:  return "IMPLEMENTO"
+    if "USADO"                in familia:  return "USADOS"
+    if "EMPILHADEIRA"         in familia:  return "EMPILHADEIRA"
+    if "PLATAFORMA"           in familia:  return "PLATAFORMA"
+    if "DRONE"                in tipo:     return "DRONE"
+    if "RECOLHEDORA AUTOMOTRIZ" in tipo:   return "RECOLHEDORA AUTOMOTRIZ"
+    if "MASTER CAFE"          in grupo:    return "CR"
+    if "2 CR"                 in grupo:    return "2 CR"
+    if "MASTER GRAOS"         in grupo:    return "MASTER GRAOS"
+    if "PULVERIZADOR"         in grupo:    return "PULVERIZADOR"
+    if "PLANTADEIRA"          in grupo:    return "PLANTADEIRA"
     return None
 
 # =========================
-# APLICAR CLASSIFICAÇÃO
+# BASES (cacheadas)
 # =========================
-vendas["PRODUTO_MATRIZ"] = vendas.apply(
-    classificar_produto,
-    axis=1
-)
+@st.cache_data
+def load_clientes():
+    df = pd.read_excel("dados/clientes.xlsx")
+    df = df.rename(columns={
+        "Documento (BR: CPF/CNPJ)": COL_DOC,
+        "Concessionária":           COL_CONC,
+        "CÓD":                      COL_MUN,
+    })
+    df[COL_VEND] = normalizar(df[COL_VEND])
+    df[COL_DOC]  = df[COL_DOC].astype(str).str.strip()
+    df[COL_CONC] = normalizar(df[COL_CONC])
+    df[COL_MUN]  = df[COL_MUN].astype(str).str.strip()
+    return df
 
-# =========================
-# DATA VENDAS
-# =========================
-vendas["Calc Mes"] = (
-    vendas["Calc Mes"]
-    .astype(str)
-    .str.strip()
-)
+@st.cache_data
+def load_opp():
+    df = pd.read_excel("dados/oportunidades.xlsx")
+    df = df.rename(columns={
+        "Vendedor (Conta) (Conta)":                   COL_VEND,
+        "Conta":                                      "Cliente",
+        "Documento (BR: CPF/CNPJ) (Conta) (Conta)":  COL_DOC,
+        "Concessionária (Conta) (Conta)":             COL_CONC,
+    })
+    df[COL_VEND] = normalizar(df[COL_VEND])
+    df[COL_DOC]  = df[COL_DOC].astype(str).str.strip()
+    df[COL_CONC] = normalizar(df[COL_CONC])
+    df["Data de Criação"] = pd.to_datetime(df["Data de Criação"], errors="coerce")
+    return df
 
-vendas["MES"] = pd.to_numeric(
-    vendas["Calc Mes"],
-    errors="coerce"
-)
+@st.cache_data
+def load_territorio():
+    df = pd.read_excel("dados/territorio.xlsx")
+    for col in ["NOME CRM", "NOME BI", "Filial", "Região", "Marca"]:
+        df[col] = normalizar(df[col])
+    return df
 
-vendas["Ano"] = (
-    vendas["Ano"]
-    .astype(str)
-    .str.strip()
-)
-
-vendas["ANO"] = pd.to_numeric(
-    vendas["Ano"],
-    errors="coerce"
-)
-
-# =========================
-# VALOR REALIZADO
-# =========================
-vendas["VALOR_REALIZADO"] = (
-    vendas["Quantidade"]
-    .astype(float)
-)
-
-mask_valor = (
-    vendas["PRODUTO_MATRIZ"]
-    .isin(
-        [
-            "IMPLEMENTO",
-            "USADOS"
-        ]
+@st.cache_data
+def load_vendas_e_realizado():
+    df = pd.read_excel("dados/vendas.xlsx")
+    for col in ["Segmento Maq", "Familia", "Tipo Produto",
+                "Grupo Modelo", "Vendedor", "Calc dim De Para Familia 2"]:
+        df[col] = normalizar(df[col].astype(str))
+    df["PRODUTO_MATRIZ"]   = df.apply(classificar_produto, axis=1)
+    df["Calc Mes"]         = df["Calc Mes"].astype(str).str.strip()
+    df["MES"]              = pd.to_numeric(df["Calc Mes"], errors="coerce")
+    df["Ano"]              = df["Ano"].astype(str).str.strip()
+    df["ANO"]              = pd.to_numeric(df["Ano"], errors="coerce")
+    df["VALOR_REALIZADO"]  = df["Quantidade"].astype(float)
+    mask_v = df["PRODUTO_MATRIZ"].isin(["IMPLEMENTO", "USADOS"])
+    df.loc[mask_v, "VALOR_REALIZADO"] = df.loc[mask_v, "Vl NFVenda"]
+    realizado = (
+        df[df["PRODUTO_MATRIZ"].notna()]
+        .groupby(["Vendedor", "PRODUTO_MATRIZ", "MES"])["VALOR_REALIZADO"]
+        .sum().reset_index()
     )
-)
+    realizado.columns = ["CONSULTOR", "PRODUTO", "MES", "REALIZADO"]
+    return df, realizado
 
-vendas.loc[
-    mask_valor,
-    "VALOR_REALIZADO"
-] = vendas.loc[
-    mask_valor,
-    "Vl NFVenda"
-]
-
-# =========================
-# BASE REALIZADO
-# =========================
-realizado = (
-    vendas[
-        vendas["PRODUTO_MATRIZ"]
-        .notna()
+@st.cache_data
+def load_rel_prod():
+    df = pd.read_excel(
+        "dados/Relatorio de Oportunidades e Produtos.xlsx",
+        usecols=[2, 3, 4, 5, 13, 20, 33, 35, 47]
+    )
+    df.columns = [
+        "Cliente", COL_DOC, COL_CONC, COL_VEND,
+        "Data de Criação", "Razão do Status",
+        "Tipo de Produto", "Família", "Tipo de Adicional",
     ]
-    .groupby(
-        [
-            "Vendedor",
-            "PRODUTO_MATRIZ",
-            "MES"
-        ]
-    )["VALOR_REALIZADO"]
-    .sum()
-    .reset_index()
-)
+    df[COL_VEND]          = normalizar(df[COL_VEND])
+    df["Data de Criação"] = pd.to_datetime(df["Data de Criação"], dayfirst=True, errors="coerce")
+    return df
 
-realizado.columns = [
-    "CONSULTOR",
-    "PRODUTO",
-    "MES",
-    "REALIZADO"
-]
-
-# =========================
-# RENOMEAR COLUNAS
-# =========================
-opp = opp.rename(columns={
-    "Vendedor (Conta) (Conta)": COL_VEND,
-    "Conta": "Cliente",
-    "Documento (BR: CPF/CNPJ) (Conta) (Conta)": COL_DOC,
-    "Concessionária (Conta) (Conta)": COL_CONC
-})
-
-clientes = clientes.rename(columns={
-    "Documento (BR: CPF/CNPJ)": COL_DOC,
-    "Concessionária": COL_CONC,
-    "CÓD": COL_MUN
-})
-
-# =========================
-# PADRONIZAÇÃO
-# =========================
-clientes[COL_VEND] = normalizar(clientes[COL_VEND])
-opp[COL_VEND] = normalizar(opp[COL_VEND])
-
-territorio["NOME CRM"] = normalizar(
-    territorio["NOME CRM"]
-)
-
-territorio["NOME BI"] = normalizar(
-    territorio["NOME BI"]
-)
-
-territorio["Filial"] = normalizar(
-    territorio["Filial"]
-)
-
-territorio["Região"] = normalizar(
-    territorio["Região"]
-)
-
-territorio["Marca"] = normalizar(
-    territorio["Marca"]
-)
-
-clientes[COL_DOC] = (
-    clientes[COL_DOC]
-    .astype(str)
-    .str.strip()
-)
-
-opp[COL_DOC] = (
-    opp[COL_DOC]
-    .astype(str)
-    .str.strip()
-)
-
-clientes[COL_CONC] = normalizar(
-    clientes[COL_CONC]
-)
-
-opp[COL_CONC] = normalizar(
-    opp[COL_CONC]
-)
-
-clientes[COL_MUN] = (
-    clientes[COL_MUN]
-    .astype(str)
-    .str.strip()
-)
+clientes            = load_clientes()
+opp                 = load_opp()
+territorio          = load_territorio()
+vendas, realizado   = load_vendas_e_realizado()
+rel_prod            = load_rel_prod()
 
 # =========================
 # CRUZAMENTO MUNICÍPIO
@@ -487,11 +293,6 @@ dashboard = (
 # =========================
 # TMOEA
 # =========================
-opp["Data de Criação"] = pd.to_datetime(
-    opp["Data de Criação"],
-    errors="coerce"
-)
-
 opp_aberto_tmo = opp[
     ~opp["Status"]
     .str.upper()
@@ -2114,7 +1915,6 @@ with tab4:
                   7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
 
     # ── Filtro de data (canto direito) ────────────────────────
-    opp["Data de Criação"] = pd.to_datetime(opp["Data de Criação"], errors="coerce")
     anos_opp = sorted(opp["Data de Criação"].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
 
     col_tit, col_ano, col_mes = st.columns([4, 1, 1])
@@ -2324,20 +2124,3 @@ with tab4:
             )
 
             st.altair_chart(chart_prod + text_prod, use_container_width=True)
-
-            # ── Resumo Produto vs Implementos ─────────────────────────
-            resumo_cat = (
-                prod_df.groupby("Categoria")[["Quantidade", "% Total"]]
-                .sum().reset_index()
-            )
-            c_prod, c_impl = st.columns(2)
-            for col_m, cat in zip([c_prod, c_impl], ["Produto", "Implementos / Acessórios"]):
-                row = resumo_cat[resumo_cat["Categoria"] == cat]
-                qtd  = int(row["Quantidade"].iloc[0]) if not row.empty else 0
-                perc = float(row["% Total"].iloc[0])  if not row.empty else 0.0
-                with col_m:
-                    st.metric(
-                        label=cat,
-                        value=f"{qtd:,}".replace(",", "."),
-                        delta=f"{perc:.1f}%".replace(".", ",")
-                    )
