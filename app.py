@@ -3,6 +3,8 @@ import pandas as pd
 import unicodedata
 import altair as alt
 import geopandas as gpd
+import os
+import datetime
 
 # =========================
 # CONFIG
@@ -27,26 +29,10 @@ st.markdown("""
 # =========================
 # HEADER
 # =========================
-col_logo_h, col_title_h = st.columns([1, 5])
-
-with col_logo_h:
-    st.image("dados/logo_pme.png", use_container_width=True)
-    st.markdown(
-        """<div style='
-            text-align:center;
-            font-size:14px;
-            font-weight:300;
-            color:#555;
-            margin-top:2px;
-        '>Projeto Horizonte</div>""",
-        unsafe_allow_html=True
-    )
-
-with col_title_h:
-    st.markdown(
-        "<h1 style='text-align:center; margin-top:20px;'>Resumo de Oportunidades</h1>",
-        unsafe_allow_html=True
-    )
+st.markdown(
+    "<h1 style='text-align:center; margin-top:8px;'>Resumo de Oportunidades</h1>",
+    unsafe_allow_html=True
+)
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Resumo por Vendedor",
@@ -110,6 +96,19 @@ def normalizar(col):
         .str.strip()
         .str.replace(r"\s+", " ", regex=True)
     )
+
+# =========================
+# BASE RELATÓRIO PRODUTOS
+# =========================
+rel_prod = pd.read_excel(
+    "dados/Relatorio de Oportunidades e Produtos.xlsx",
+    usecols=[2, 3, 4, 5, 20, 33, 35, 47]
+)
+rel_prod.columns = [
+    "Cliente", COL_DOC, COL_CONC, COL_VEND,
+    "Razão do Status", "Tipo de Produto", "Família", "Tipo de Adicional"
+]
+rel_prod[COL_VEND] = normalizar(rel_prod[COL_VEND])
 
 # =========================
 # NORMALIZAÇÃO VENDAS
@@ -530,6 +529,16 @@ dashboard.drop(
 # =========================
 # SIDEBAR
 # =========================
+
+# ── Logo + Projeto Horizonte ──────────────────────────────
+st.sidebar.image("dados/logo_pme.png", use_container_width=True)
+st.sidebar.markdown(
+    """<div style='text-align:center; font-size:14px; font-weight:300;
+        color:#555; margin-top:2px; margin-bottom:12px;'
+    >Projeto Horizonte</div>""",
+    unsafe_allow_html=True
+)
+
 st.sidebar.title("Filtros")
 
 regiao = st.sidebar.selectbox(
@@ -570,6 +579,35 @@ vendedor = st.sidebar.selectbox(
         .dropna()
         .unique()
     )
+)
+
+# ── Datas de atualização ──────────────────────────────────
+def _data_mod(path):
+    try:
+        ts = os.path.getmtime(path)
+        return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+    except Exception:
+        return "—"
+
+_bases = [
+    ("Clientes",        "dados/clientes.xlsx"),
+    ("Oportunidades",   "dados/oportunidades.xlsx"),
+    ("Território",      "dados/territorio.xlsx"),
+    ("Vendas",          "dados/vendas.xlsx"),
+    ("Rel. Produtos",   "dados/Relatorio de Oportunidades e Produtos.xlsx"),
+]
+
+_linhas = "<br>".join(
+    f"<b>{nome}</b>: {_data_mod(path)}"
+    for nome, path in _bases
+)
+
+st.sidebar.markdown(
+    f"""<hr style='margin:12px 0 8px 0'>
+    <div style='font-size:14px; font-weight:300; color:#555; line-height:1.8;'>
+        <b style='color:#333;'>Última atualização</b><br>{_linhas}
+    </div>""",
+    unsafe_allow_html=True
 )
 
 df_base = dashboard.copy()
@@ -2155,3 +2193,83 @@ with tab4:
                 "%": st.column_config.TextColumn("%", width="small"),
             }
         )
+
+    st.markdown("---")
+
+    # ── Gráfico por Produto ───────────────────────────────────
+    mostrar_prod = st.checkbox(
+        "📦 Mostrar gráfico de produtos por razão de status",
+        value=False
+    )
+
+    if mostrar_prod:
+
+        st.markdown("### Funil por Produto — Oportunidades em Aberto")
+
+        por_familia = st.toggle("Mostrar por família", value=False)
+
+        # Filtra rel_prod: em aberto + vendedores do sidebar
+        mask_aberto = ~rel_prod["Razão do Status"].str.upper().str.contains("GANH|PERD", na=False)
+        rel_funil = rel_prod[
+            rel_prod[COL_VEND].isin(vendedores_funil) & mask_aberto
+        ].copy()
+
+        # Determina categoria e família
+        rel_funil["Categoria"] = rel_funil["Tipo de Produto"].apply(
+            lambda x: "Implementos / Acessórios"
+            if str(x).strip() == "Implementos / Acessórios"
+            else "Produto"
+        )
+        rel_funil["Família Exibida"] = rel_funil.apply(
+            lambda r: r["Tipo de Adicional"]
+            if r["Categoria"] == "Implementos / Acessórios"
+            else r["Família"],
+            axis=1
+        )
+
+        if rel_funil.empty:
+            st.info("Nenhum produto encontrado para os filtros selecionados.")
+        else:
+            if por_familia:
+                group_col = "Família Exibida"
+            else:
+                group_col = "Razão do Status"
+
+            prod_df = (
+                rel_funil.groupby([group_col, "Categoria"])
+                .size()
+                .reset_index(name="Quantidade")
+                .sort_values(group_col, ascending=True)
+            )
+
+            chart_prod = (
+                alt.Chart(prod_df)
+                .mark_bar(cornerRadiusTopRight=3, cornerRadiusBottomRight=3)
+                .encode(
+                    y=alt.Y(
+                        f"{group_col}:N",
+                        sort=alt.EncodingSortField(field=group_col, order="descending"),
+                        axis=alt.Axis(labelLimit=300, title=None)
+                    ),
+                    x=alt.X(
+                        "Quantidade:Q",
+                        axis=alt.Axis(title="Quantidade")
+                    ),
+                    color=alt.Color(
+                        "Categoria:N",
+                        scale=alt.Scale(
+                            domain=["Produto", "Implementos / Acessórios"],
+                            range=["#1565C0", "#E65100"]
+                        ),
+                        legend=alt.Legend(title="Tipo")
+                    ),
+                    tooltip=[
+                        alt.Tooltip(f"{group_col}:N", title=group_col),
+                        alt.Tooltip("Categoria:N", title="Categoria"),
+                        alt.Tooltip("Quantidade:Q", title="Quantidade"),
+                    ]
+                )
+                .properties(height=max(200, prod_df[group_col].nunique() * 45))
+            )
+
+            st.altair_chart(chart_prod, use_container_width=True)
