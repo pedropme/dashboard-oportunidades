@@ -102,13 +102,14 @@ def normalizar(col):
 # =========================
 rel_prod = pd.read_excel(
     "dados/Relatorio de Oportunidades e Produtos.xlsx",
-    usecols=[2, 3, 4, 5, 20, 33, 35, 47]
+    usecols=[2, 3, 4, 5, 13, 20, 33, 35, 47]
 )
 rel_prod.columns = [
     "Cliente", COL_DOC, COL_CONC, COL_VEND,
-    "Razão do Status", "Tipo de Produto", "Família", "Tipo de Adicional"
+    "Data de Criação", "Razão do Status", "Tipo de Produto", "Família", "Tipo de Adicional"
 ]
 rel_prod[COL_VEND] = normalizar(rel_prod[COL_VEND])
+rel_prod["Data de Criação"] = pd.to_datetime(rel_prod["Data de Criação"], dayfirst=True, errors="coerce")
 
 # =========================
 # NORMALIZAÇÃO VENDAS
@@ -2108,16 +2109,45 @@ media_pontuacao = df_score["pontuacao"].mean() if not df_score.empty else 0
 # =========================
 with tab4:
 
-    st.markdown("### Funil de Vendas — Oportunidades em Aberto")
-
     COL_RAZAO = "Razão do Status"
+    NOMES_MES  = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
+                  7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
 
-    # Filtra oportunidades em aberto respeitando sidebar
+    # ── Filtro de data (canto direito) ────────────────────────
+    opp["Data de Criação"] = pd.to_datetime(opp["Data de Criação"], errors="coerce")
+    anos_opp = sorted(opp["Data de Criação"].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
+
+    col_tit, col_ano, col_mes = st.columns([4, 1, 1])
+    with col_tit:
+        st.markdown("### Funil de Vendas — Oportunidades em Aberto")
+
+    with col_ano:
+        ano_sel = st.selectbox("Ano", ["Todos"] + [str(a) for a in anos_opp], key="funil_ano")
+
+    with col_mes:
+        if ano_sel != "Todos":
+            meses_disp = sorted(
+                opp[opp["Data de Criação"].dt.year == int(ano_sel)]["Data de Criação"]
+                .dt.month.dropna().unique().astype(int).tolist()
+            )
+            opcoes_mes = ["Todos"] + [f"{m:02d} — {NOMES_MES[m]}" for m in meses_disp]
+        else:
+            opcoes_mes = ["Todos"]
+        mes_sel = st.selectbox("Mês", opcoes_mes, key="funil_mes",
+                               disabled=(ano_sel == "Todos"))
+
+    # ── Filtra opp em aberto + sidebar + data ─────────────────
     vendedores_funil = df_base[COL_VEND].dropna().unique()
     opp_funil = opp[
         opp[COL_VEND].isin(vendedores_funil)
         & ~opp["Status"].str.upper().str.contains("GANH|PERD", na=False)
     ].copy()
+
+    if ano_sel != "Todos":
+        opp_funil = opp_funil[opp_funil["Data de Criação"].dt.year == int(ano_sel)]
+        if mes_sel != "Todos":
+            mes_num = int(mes_sel.split(" — ")[0])
+            opp_funil = opp_funil[opp_funil["Data de Criação"].dt.month == mes_num]
 
     if opp_funil.empty:
         st.info("Nenhuma oportunidade em aberto para os filtros selecionados.")
@@ -2142,15 +2172,8 @@ with tab4:
                     sort=alt.EncodingSortField(field=COL_RAZAO, order="descending"),
                     axis=alt.Axis(labelLimit=300, title=None)
                 ),
-                x=alt.X(
-                    "Quantidade:Q",
-                    axis=alt.Axis(title="Quantidade de Oportunidades")
-                ),
-                color=alt.Color(
-                    "Quantidade:Q",
-                    scale=alt.Scale(scheme="blues"),
-                    legend=None
-                ),
+                x=alt.X("Quantidade:Q", axis=alt.Axis(title="Quantidade de Oportunidades")),
+                color=alt.Color("Quantidade:Q", scale=alt.Scale(scheme="blues"), legend=None),
                 tooltip=[
                     alt.Tooltip(f"{COL_RAZAO}:N", title="Razão do Status"),
                     alt.Tooltip("Quantidade:Q", title="Quantidade"),
@@ -2159,16 +2182,9 @@ with tab4:
             )
             .properties(height=max(200, len(funil_df) * 45))
         )
-
-        # Rótulos com valor ao final de cada barra
-        text = chart.mark_text(
-            align="left",
-            dx=5,
-            color="#333"
-        ).encode(
+        text = chart.mark_text(align="left", dx=5, color="#333").encode(
             text=alt.Text("Quantidade:Q")
         )
-
         st.altair_chart(chart + text, use_container_width=True)
 
         st.markdown("---")
@@ -2179,40 +2195,40 @@ with tab4:
             f"<b>{total_funil:,}</b></span>".replace(",", "."),
             unsafe_allow_html=True
         )
-
         tabela_funil = funil_df.copy()
         tabela_funil["%"] = tabela_funil["%"].apply(lambda x: f"{x:.1f}%".replace(".", ","))
-
         st.dataframe(
             tabela_funil.rename(columns={COL_RAZAO: "Razão do Status", "Quantidade": "Qtd"}),
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Razão do Status": st.column_config.TextColumn("Razão do Status", width="large"),
-                "Qtd": st.column_config.NumberColumn("Qtd", width="small"),
-                "%": st.column_config.TextColumn("%", width="small"),
+                "Qtd":             st.column_config.NumberColumn("Qtd", width="small"),
+                "%":               st.column_config.TextColumn("%", width="small"),
             }
         )
 
     st.markdown("---")
 
     # ── Gráfico por Produto ───────────────────────────────────
-    mostrar_prod = st.checkbox(
-        "📦 Mostrar gráfico de produtos por razão de status",
-        value=False
-    )
+    mostrar_prod = st.checkbox("📦 Mostrar gráfico de produtos por razão de status", value=False)
 
     if mostrar_prod:
 
         st.markdown("### Funil por Produto — Oportunidades em Aberto")
-
         por_familia = st.toggle("Mostrar por família", value=False)
 
-        # Filtra rel_prod: em aberto + vendedores do sidebar
+        # Filtra rel_prod: em aberto + vendedores + data
         mask_aberto = ~rel_prod["Razão do Status"].str.upper().str.contains("GANH|PERD", na=False)
         rel_funil = rel_prod[
             rel_prod[COL_VEND].isin(vendedores_funil) & mask_aberto
         ].copy()
+
+        if ano_sel != "Todos":
+            rel_funil = rel_funil[rel_funil["Data de Criação"].dt.year == int(ano_sel)]
+            if mes_sel != "Todos":
+                mes_num = int(mes_sel.split(" — ")[0])
+                rel_funil = rel_funil[rel_funil["Data de Criação"].dt.month == mes_num]
 
         # Determina categoria e família
         rel_funil["Categoria"] = rel_funil["Tipo de Produto"].apply(
@@ -2234,6 +2250,11 @@ with tab4:
 
             if por_familia:
                 group_col = "Família Exibida"
+                # ordena por total decrescente na vista família
+                ordem_fam = (
+                    rel_funil.groupby("Família Exibida").size()
+                    .sort_values(ascending=True).index.tolist()
+                )
             else:
                 group_col = "Razão do Status"
 
@@ -2241,26 +2262,24 @@ with tab4:
                 rel_funil.groupby([group_col, "Categoria"])
                 .size()
                 .reset_index(name="Quantidade")
-                .sort_values(group_col, ascending=True)
             )
             prod_df["% Total"] = (prod_df["Quantidade"] / grand_total_prod * 100).round(1)
-            prod_df["Label"] = (
-                prod_df["Quantidade"].astype(str)
-                + " ("
-                + prod_df["% Total"].apply(lambda x: f"{x:.1f}".replace(".", ","))
-                + "%)"
-            )
 
-            # Totais por grupo (para rótulo no final da barra empilhada)
+            # Totais por grupo (rótulo no final da barra + sort)
             totais_grupo = (
                 prod_df.groupby(group_col)["Quantidade"]
-                .sum()
-                .reset_index(name="Total")
+                .sum().reset_index(name="Total")
             )
             totais_grupo["% Total"] = (totais_grupo["Total"] / grand_total_prod * 100).round(1)
             totais_grupo["Label %"] = totais_grupo["% Total"].apply(
                 lambda x: f"{x:.1f}%".replace(".", ",")
             )
+
+            # Ordem do eixo Y
+            if por_familia:
+                y_sort = ordem_fam          # lista explícita, menor→topo
+            else:
+                y_sort = alt.EncodingSortField(field=group_col, order="descending")
 
             chart_prod = (
                 alt.Chart(prod_df)
@@ -2268,11 +2287,12 @@ with tab4:
                 .encode(
                     y=alt.Y(
                         f"{group_col}:N",
-                        sort=alt.EncodingSortField(field=group_col, order="descending"),
+                        sort=y_sort,
                         axis=alt.Axis(labelLimit=300, title=None)
                     ),
                     x=alt.X(
                         "Quantidade:Q",
+                        stack="zero",
                         axis=alt.Axis(title="Quantidade")
                     ),
                     color=alt.Color(
@@ -2290,18 +2310,14 @@ with tab4:
                         alt.Tooltip("% Total:Q", title="% do Total", format=".1f"),
                     ]
                 )
-                .properties(height=max(200, prod_df[group_col].nunique() * 45))
+                .properties(height=max(200, prod_df[group_col].nunique() * 40))
             )
 
-            # Rótulo no final de cada barra (total do grupo + %)
             text_prod = (
                 alt.Chart(totais_grupo)
                 .mark_text(align="left", dx=5, color="#333", fontSize=12)
                 .encode(
-                    y=alt.Y(
-                        f"{group_col}:N",
-                        sort=alt.EncodingSortField(field=group_col, order="descending")
-                    ),
+                    y=alt.Y(f"{group_col}:N", sort=y_sort),
                     x=alt.X("Total:Q", stack="zero"),
                     text=alt.Text("Label %:N")
                 )
@@ -2310,20 +2326,18 @@ with tab4:
             st.altair_chart(chart_prod + text_prod, use_container_width=True)
 
             # ── Resumo Produto vs Implementos ─────────────────────────
-            if not por_familia:
-                resumo_cat = (
-                    prod_df.groupby("Categoria")[["Quantidade", "% Total"]]
-                    .sum()
-                    .reset_index()
-                )
-                c_prod, c_impl = st.columns(2)
-                for col_m, cat in zip([c_prod, c_impl], ["Produto", "Implementos / Acessórios"]):
-                    row = resumo_cat[resumo_cat["Categoria"] == cat]
-                    qtd  = int(row["Quantidade"].iloc[0]) if not row.empty else 0
-                    perc = float(row["% Total"].iloc[0])  if not row.empty else 0.0
-                    with col_m:
-                        st.metric(
-                            label=cat,
-                            value=f"{qtd:,}".replace(",", "."),
-                            delta=f"{perc:.1f}%".replace(".", ",")
-                        )
+            resumo_cat = (
+                prod_df.groupby("Categoria")[["Quantidade", "% Total"]]
+                .sum().reset_index()
+            )
+            c_prod, c_impl = st.columns(2)
+            for col_m, cat in zip([c_prod, c_impl], ["Produto", "Implementos / Acessórios"]):
+                row = resumo_cat[resumo_cat["Categoria"] == cat]
+                qtd  = int(row["Quantidade"].iloc[0]) if not row.empty else 0
+                perc = float(row["% Total"].iloc[0])  if not row.empty else 0.0
+                with col_m:
+                    st.metric(
+                        label=cat,
+                        value=f"{qtd:,}".replace(",", "."),
+                        delta=f"{perc:.1f}%".replace(".", ",")
+                    )
