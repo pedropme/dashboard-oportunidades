@@ -386,7 +386,7 @@ vendedor = st.sidebar.selectbox(
 # ── Datas de atualização ──────────────────────────────────
 def _data_mod(path):
     try:
-        ts = os.path.getmtime(path)
+        ts = os.path.getctime(path)
         return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
     except Exception:
         return "—"
@@ -2051,7 +2051,6 @@ with tab4:
             # Eixo Y sempre = Razão do Status
             # Cor: Categoria (padrão) ou Família Exibida (por_familia)
             cor_col = "Família Exibida" if por_familia else "Categoria"
-            y_sort  = alt.EncodingSortField(field="Razão do Status", order="descending")
 
             prod_df = (
                 rel_funil.groupby(["Razão do Status", cor_col])
@@ -2069,6 +2068,17 @@ with tab4:
             totais_grupo["Label %"] = totais_grupo["% Total"].apply(
                 lambda x: f"{x:.1f}%".replace(".", ",")
             )
+
+            # Ordem do eixo Y
+            if por_familia:
+                # maior total no topo → lista crescente (Altair: 1º item = base)
+                ordem_y = (
+                    totais_grupo.sort_values("Total", ascending=True)
+                    ["Razão do Status"].tolist()
+                )
+                y_sort = ordem_y
+            else:
+                y_sort = alt.EncodingSortField(field="Razão do Status", order="descending")
 
             # Paleta de cores
             if por_familia:
