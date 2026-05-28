@@ -1,8 +1,15 @@
 # Credenciais — nunca versionar
 scripts/baixar_vendas.py
+scripts/baixar_cnh.py
 
 # Logs locais
 scripts/log_download.txt
+scripts/log_cnh.txt
+
+# Diagnosticos temporarios (nao versionar)
+scripts/_diagnostico_*.py
+scripts/_diag_*.log
+scripts/diagnostico.py
 
 # Temporários
 dados/_tmp_download/

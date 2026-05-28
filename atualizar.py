@@ -14,6 +14,7 @@ else:
     PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 VENDAS_SCRIPT = os.path.join(PROJECT_DIR, "scripts", "baixar_vendas.py")
+CNH_SCRIPT    = os.path.join(PROJECT_DIR, "scripts", "baixar_cnh.py")
 
 
 def _python_exe():
@@ -85,7 +86,41 @@ def run_update():
             else:
                 log("  (script de vendas não encontrado — pulando)", "gray")
 
-            # ── 2. git add dados/ ──────────────────────────────────────────
+            # ── 2. Download de oportunidades CNH (CRM Dynamics) ───────────
+            cnh_ok = False
+            if os.path.exists(CNH_SCRIPT):
+                log("\nBaixando bases de oportunidades do CRM CNH...")
+                log("  (pode levar até 20 minutos — aguarde)", "gray")
+                py = _python_exe()
+                r = subprocess.run(
+                    [py, CNH_SCRIPT, "--no-git"],
+                    cwd=PROJECT_DIR,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=1800,         # 30 min máx (login + SSRS render)
+                )
+                for linha in r.stdout.splitlines():
+                    if linha.strip():
+                        if "ERRO" in linha or "TIMEOUT" in linha or "Traceback" in linha:
+                            log(f"  {linha}", "red")
+                        elif "Concluido" in linha or "bytes" in linha:
+                            log(f"  {linha}", "green")
+                        else:
+                            log(f"  {linha}", "gray")
+                if r.returncode == 0:
+                    log("✓ Bases CNH baixadas com sucesso", "green")
+                    cnh_ok = True
+                else:
+                    log("✗ Falha ao baixar bases CNH — continuando com arquivos existentes", "orange")
+                    if r.stderr:
+                        log(f"  {r.stderr[:400]}", "red")
+                    ok_geral = False
+            else:
+                log("  (script CNH não encontrado — pulando)", "gray")
+
+            # ── 3. git add dados/ ──────────────────────────────────────────
             log("\nPreparando arquivos para envio...")
             r = subprocess.run(
                 ["git", "add", "dados/"],
@@ -99,8 +134,11 @@ def run_update():
                 log(f"✗ Erro ao preparar arquivos:\n{r.stderr}", "red")
                 ok_geral = False
 
-            # ── 3. git commit ──────────────────────────────────────────────
-            sufixo = " (+ vendas)" if vendas_ok else ""
+            # ── 4. git commit ──────────────────────────────────────────────
+            partes = []
+            if vendas_ok: partes.append("vendas")
+            if cnh_ok:    partes.append("CNH")
+            sufixo = (" (+ " + " + ".join(partes) + ")") if partes else ""
             msg_commit = f"Atualização de base{sufixo} — {agora}"
             r = subprocess.run(
                 ["git", "commit", "-m", msg_commit],
@@ -113,7 +151,7 @@ def run_update():
             else:
                 log("  Sem alterações novas para commitar", "orange")
 
-            # ── 4. git push ────────────────────────────────────────────────
+            # ── 5. git push ────────────────────────────────────────────────
             log("  Enviando ao GitHub...")
             r = subprocess.run(
                 ["git", "push", "origin", "main"],
@@ -129,7 +167,7 @@ def run_update():
                 ok_geral = False
 
         except subprocess.TimeoutExpired:
-            log("✗ Timeout: o download de vendas demorou mais de 5 minutos.", "red")
+            log("✗ Timeout: o download demorou mais do esperado.", "red")
             ok_geral = False
         except FileNotFoundError:
             log("✗ Git não encontrado. Certifique-se de que o Git está instalado.", "red")
@@ -166,7 +204,7 @@ tk.Label(
 
 tk.Label(
     root,
-    text="Baixa a base de vendas do portal Analysis BI\ne envia todos os arquivos para o GitHub.",
+    text="Baixa vendas (Analysis BI) + oportunidades CNH (CRM)\ne envia todos os arquivos para o GitHub.",
     font=("Segoe UI", 9),
     bg="#1e1e2e",
     fg="#a6adc8",

@@ -6,6 +6,7 @@ import geopandas as gpd
 import os
 import datetime
 import subprocess
+import json
 
 # =========================
 # CONFIG
@@ -28,6 +29,67 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
+# AUTENTICAÇÃO
+# =========================
+USUARIOS_FILE = "dados/usuarios.json"
+
+def _load_usuarios():
+    try:
+        with open(USUARIOS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_usuarios(data):
+    with open(USUARIOS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+if "usuario" not in st.session_state:
+    _, _col_login, _ = st.columns([1, 1.2, 1])
+    with _col_login:
+        try:
+            st.image("dados/logo_pme.png", use_container_width=True)
+        except Exception:
+            pass
+        st.markdown(
+            """<h2 style='text-align:center; margin-bottom:24px; margin-top:16px;'>
+            Matriz de Performance</h2>""",
+            unsafe_allow_html=True
+        )
+        with st.form("login_form"):
+            _email_input = st.text_input(
+                "E-mail", placeholder="usuario@pmemaquinas.com.br"
+            )
+            _senha_input = st.text_input("Senha", type="password")
+            _login_btn = st.form_submit_button(
+                "Entrar", use_container_width=True, type="primary"
+            )
+        if _login_btn:
+            _usuarios_db = _load_usuarios()
+            _u = _usuarios_db.get(_email_input)
+            if _u and _u.get("senha") == _senha_input:
+                st.session_state.usuario         = _email_input
+                st.session_state.perfil          = _u.get("perfil", "geral")
+                st.session_state.nome            = _u.get(
+                    "nome",
+                    _email_input.split("@")[0].split(".")[0].capitalize()
+                )
+                st.session_state.filial_restrita = _u.get("filial_restrita")
+                _u["ultimo_acesso"] = datetime.datetime.now().strftime(
+                    "%d/%m/%Y %H:%M"
+                )
+                _save_usuarios(_usuarios_db)
+                st.rerun()
+            else:
+                st.error("E-mail ou senha incorretos.")
+    st.stop()
+
+# --- Variáveis de sessão ---
+_perfil          = st.session_state.get("perfil", "geral")
+_nome            = st.session_state.get("nome", "")
+_filial_restrita = st.session_state.get("filial_restrita")   # None | "LINHARES"
+
+# =========================
 # HEADER
 # =========================
 st.markdown(
@@ -35,12 +97,17 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-tab1, tab2, tab3, tab4 = st.tabs([
+_tabs_labels = [
     "📊 Resumo por Vendedor",
     "🏙️ Resumo por Município",
     "📈 Matriz de Performance",
-    "🔽 Funil de Vendas"
-])
+    "🔽 Funil de Vendas",
+]
+if _perfil == "admin":
+    _tabs_labels.append("⚙️ Administração")
+_all_tabs = st.tabs(_tabs_labels)
+tab1, tab2, tab3, tab4 = _all_tabs[:4]
+tab_admin = _all_tabs[4] if _perfil == "admin" else None
 
 # =========================
 # MAPA (CACHE)
@@ -342,25 +409,55 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 
+# ── Usuário logado + Logout ───────────────────────────────
+st.sidebar.markdown(
+    f"""<div style='font-size:13px; color:#444; margin-bottom:6px;'>
+        👤 <b>{_nome}</b>
+    </div>""",
+    unsafe_allow_html=True
+)
+if st.sidebar.button("🚪 Sair", use_container_width=True):
+    st.session_state.clear()
+    st.rerun()
+
+st.sidebar.markdown("---")
 st.sidebar.title("Filtros")
 
-regiao = st.sidebar.selectbox(
-    "Região",
-    ["Todas"] + sorted(
-        dashboard["Região"]
+if _filial_restrita:
+    # Usuário com acesso restrito a uma filial
+    filial = _filial_restrita
+    st.sidebar.markdown(
+        f"""<div style='font-size:13px; color:#888; margin-bottom:10px;
+            border:1px solid #ddd; border-radius:6px; padding:6px 10px;
+            background:#f9f9f9;'>
+            🔒 <b>Filial:</b> {_filial_restrita}
+        </div>""",
+        unsafe_allow_html=True
+    )
+    _regioes_filial = sorted(
+        dashboard[dashboard["Filial"] == _filial_restrita]["Região"]
         .dropna()
         .unique()
     )
-)
+    regiao = st.sidebar.selectbox("Região", ["Todas"] + _regioes_filial)
+else:
+    regiao = st.sidebar.selectbox(
+        "Região",
+        ["Todas"] + sorted(
+            dashboard["Região"]
+            .dropna()
+            .unique()
+        )
+    )
 
-filial = st.sidebar.selectbox(
-    "Filial",
-    ["Todas"] + sorted(
-        dashboard["Filial"]
-        .dropna()
-        .unique()
+    filial = st.sidebar.selectbox(
+        "Filial",
+        ["Todas"] + sorted(
+            dashboard["Filial"]
+            .dropna()
+            .unique()
+        )
     )
-)
 
 # base filtrada até filial/região
 base_filtro_vendedor = dashboard.copy()
@@ -2161,3 +2258,93 @@ with tab4:
             )
 
             st.altair_chart(chart_prod + text_prod, use_container_width=True)
+
+# =========================
+# PAINEL ADMINISTRAÇÃO
+# =========================
+if _perfil == "admin" and tab_admin is not None:
+    with tab_admin:
+        st.markdown("## ⚙️ Gerenciamento de Usuários")
+
+        _db = _load_usuarios()
+
+        _perfil_labels = {
+            "admin":           "👑 Administrador",
+            "geral":           "👁️ Geral",
+            "filial_restrita": "📍 Filial Restrita",
+        }
+
+        # ── Cabeçalho da tabela ───────────────────────────
+        _hdr = st.columns([2.5, 1.2, 1.6, 1.5, 2.0, 1.5])
+        for _hc, _ht in zip(
+            _hdr,
+            ["E-mail", "Nome", "Perfil", "Filial Restrita",
+             "Último Acesso", "Senha Atual"]
+        ):
+            _hc.markdown(f"**{_ht}**")
+        st.divider()
+
+        # ── Linhas ───────────────────────────────────────
+        for _uemail, _udata in _db.items():
+            _c0, _c1, _c2, _c3, _c4, _c5 = st.columns(
+                [2.5, 1.2, 1.6, 1.5, 2.0, 1.5]
+            )
+            _c0.write(_uemail)
+            _c1.write(_udata.get("nome", ""))
+            _c2.write(
+                _perfil_labels.get(_udata.get("perfil", ""), _udata.get("perfil", ""))
+            )
+            _c3.write(_udata.get("filial_restrita") or "—")
+            _c4.write(_udata.get("ultimo_acesso") or "Nunca")
+            _c5.write(_udata.get("senha", ""))
+
+            # ── Formulário de edição ──────────────────────
+            _form_key = _uemail.replace("@", "_").replace(".", "_")
+            with st.expander(
+                f"✏️ Editar — {_udata.get('nome', _uemail)}", expanded=False
+            ):
+                with st.form(f"_fedit_{_form_key}"):
+                    _fa, _fb = st.columns(2)
+                    _novo_nome = _fa.text_input(
+                        "Nome", value=_udata.get("nome", "")
+                    )
+                    _opcoes_p = ["admin", "geral", "filial_restrita"]
+                    _idx_p = (
+                        _opcoes_p.index(_udata.get("perfil", "geral"))
+                        if _udata.get("perfil") in _opcoes_p else 1
+                    )
+                    _novo_perfil = _fb.selectbox(
+                        "Perfil",
+                        options=_opcoes_p,
+                        format_func=lambda x: _perfil_labels.get(x, x),
+                        index=_idx_p,
+                    )
+                    _fc, _fd = st.columns(2)
+                    _nova_filial_r = _fc.text_input(
+                        "Filial Restrita (vazio = sem restrição)",
+                        value=_udata.get("filial_restrita") or "",
+                    )
+                    _nova_senha = _fd.text_input(
+                        "Nova Senha (vazio = manter atual)",
+                        type="password",
+                    )
+                    _btn_salvar = st.form_submit_button(
+                        "💾 Salvar alterações",
+                        use_container_width=True,
+                        type="primary",
+                    )
+                    if _btn_salvar:
+                        _db[_uemail]["nome"]   = _novo_nome
+                        _db[_uemail]["perfil"] = _novo_perfil
+                        _db[_uemail]["filial_restrita"] = (
+                            _nova_filial_r.strip().upper() or None
+                        )
+                        if _nova_senha:
+                            _db[_uemail]["senha"] = _nova_senha
+                        _save_usuarios(_db)
+                        st.success(
+                            f"✅ Usuário **{_uemail}** atualizado com sucesso!"
+                        )
+                        st.rerun()
+
+            st.divider()
