@@ -1,6 +1,7 @@
 # Credenciais — nunca versionar
 scripts/baixar_vendas.py
 scripts/baixar_cnh.py
+dados/usuarios.json
 
 # Logs locais
 scripts/log_download.txt
