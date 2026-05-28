@@ -44,6 +44,7 @@ def _load_usuarios():
                     "perfil":          dados.get("perfil", "geral"),
                     "nome":            dados.get("nome", ""),
                     "filial_restrita": dados.get("filial_restrita") or None,
+                    "regiao_restrita": dados.get("regiao_restrita") or None,
                     "ultimo_acesso":   None,
                 }
             return result
