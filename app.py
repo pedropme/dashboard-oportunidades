@@ -34,6 +34,22 @@ st.markdown("""
 USUARIOS_FILE = "dados/usuarios.json"
 
 def _load_usuarios():
+    # 1. Streamlit Secrets (Streamlit Cloud — não entra no git)
+    try:
+        if "usuarios" in st.secrets:
+            result = {}
+            for email, dados in st.secrets["usuarios"].items():
+                result[email] = {
+                    "senha":           dados.get("senha", ""),
+                    "perfil":          dados.get("perfil", "geral"),
+                    "nome":            dados.get("nome", ""),
+                    "filial_restrita": dados.get("filial_restrita") or None,
+                    "ultimo_acesso":   None,
+                }
+            return result
+    except Exception:
+        pass
+    # 2. Arquivo local (desenvolvimento / execução local)
     try:
         with open(USUARIOS_FILE, encoding="utf-8") as f:
             return json.load(f)
@@ -41,8 +57,11 @@ def _load_usuarios():
         return {}
 
 def _save_usuarios(data):
-    with open(USUARIOS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(USUARIOS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass  # No Streamlit Cloud, alterações não persistem entre reinicializações
 
 if "usuario" not in st.session_state:
     _, _col_login, _ = st.columns([1, 1.2, 1])
