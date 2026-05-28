@@ -111,6 +111,7 @@ if "usuario" not in st.session_state:
                     _email_input.split("@")[0].split(".")[0].capitalize()
                 )
                 st.session_state.filial_restrita = _u.get("filial_restrita")
+                st.session_state.regiao_restrita = _u.get("regiao_restrita")
                 _u["ultimo_acesso"] = datetime.datetime.now().strftime(
                     "%d/%m/%Y %H:%M"
                 )
@@ -123,11 +124,12 @@ if "usuario" not in st.session_state:
 # --- Variáveis de sessão ---
 _perfil          = st.session_state.get("perfil", "geral")
 _nome            = st.session_state.get("nome", "")
-_filial_restrita  = st.session_state.get("filial_restrita")   # None | "LINHARES" | "BOM JESUS,URUCUI"
+_filial_restrita   = st.session_state.get("filial_restrita")   # None | "LINHARES" | "BOM JESUS,URUCUI"
 _filiais_restritas = (
     [f.strip() for f in _filial_restrita.split(",") if f.strip()]
     if _filial_restrita else None
 )
+_regiao_restrita   = st.session_state.get("regiao_restrita")   # None | "CERRADO" | "SUDESTE"
 
 # =========================
 # HEADER
@@ -436,9 +438,11 @@ dashboard.drop(
     inplace=True
 )
 
-# ── Restrição de acesso por filial(is) ──────────────────────────────────────
+# ── Restrição de acesso por filial(is) ou região ─────────────────────────────
 if _filiais_restritas:
     dashboard = dashboard[dashboard["Filial"].isin(_filiais_restritas)]
+elif _regiao_restrita:
+    dashboard = dashboard[dashboard["Região"] == _regiao_restrita]
 
 # =========================
 # SIDEBAR
@@ -483,6 +487,21 @@ if _filiais_restritas:
     regiao = st.sidebar.selectbox(
         "Região",
         ["Todas"] + sorted(dashboard["Região"].dropna().unique())
+    )
+elif _regiao_restrita:
+    # dashboard já pré-filtrado para esta região
+    regiao = _regiao_restrita
+    st.sidebar.markdown(
+        f"""<div style='font-size:13px; color:#888; margin-bottom:10px;
+            border:1px solid #ddd; border-radius:6px; padding:6px 10px;
+            background:#f9f9f9;'>
+            🔒 <b>Região:</b> {_regiao_restrita}
+        </div>""",
+        unsafe_allow_html=True
+    )
+    filial = st.sidebar.selectbox(
+        "Filial",
+        ["Todas"] + sorted(dashboard["Filial"].dropna().unique())
     )
 else:
     regiao = st.sidebar.selectbox(
@@ -2317,13 +2336,14 @@ if _perfil == "admin" and tab_admin is not None:
             "admin":           "👑 Administrador",
             "geral":           "👁️ Geral",
             "filial_restrita": "📍 Filial Restrita",
+            "divisao":         "🗺️ Divisão",
         }
 
         # ── Cabeçalho da tabela ───────────────────────────
-        _hdr = st.columns([2.5, 1.2, 1.6, 1.5, 2.0, 1.5])
+        _hdr = st.columns([2.3, 1.0, 1.5, 1.8, 1.8, 1.3])
         for _hc, _ht in zip(
             _hdr,
-            ["E-mail", "Nome", "Perfil", "Filial Restrita",
+            ["E-mail", "Nome", "Perfil", "Restrição",
              "Último Acesso", "Senha Atual"]
         ):
             _hc.markdown(f"**{_ht}**")
@@ -2332,14 +2352,21 @@ if _perfil == "admin" and tab_admin is not None:
         # ── Linhas ───────────────────────────────────────
         for _uemail, _udata in _db.items():
             _c0, _c1, _c2, _c3, _c4, _c5 = st.columns(
-                [2.5, 1.2, 1.6, 1.5, 2.0, 1.5]
+                [2.3, 1.0, 1.5, 1.8, 1.8, 1.3]
             )
             _c0.write(_uemail)
             _c1.write(_udata.get("nome", ""))
             _c2.write(
                 _perfil_labels.get(_udata.get("perfil", ""), _udata.get("perfil", ""))
             )
-            _c3.write(_udata.get("filial_restrita") or "—")
+            # Restrição: filial(is) ou região
+            if _udata.get("regiao_restrita"):
+                _restr = f"🗺️ {_udata['regiao_restrita']}"
+            elif _udata.get("filial_restrita"):
+                _restr = f"📍 {_udata['filial_restrita']}"
+            else:
+                _restr = "—"
+            _c3.write(_restr)
             _c4.write(_udata.get("ultimo_acesso") or "Nunca")
             _c5.write(_udata.get("senha", ""))
 
@@ -2353,7 +2380,7 @@ if _perfil == "admin" and tab_admin is not None:
                     _novo_nome = _fa.text_input(
                         "Nome", value=_udata.get("nome", "")
                     )
-                    _opcoes_p = ["admin", "geral", "filial_restrita"]
+                    _opcoes_p = ["admin", "geral", "filial_restrita", "divisao"]
                     _idx_p = (
                         _opcoes_p.index(_udata.get("perfil", "geral"))
                         if _udata.get("perfil") in _opcoes_p else 1
@@ -2366,10 +2393,14 @@ if _perfil == "admin" and tab_admin is not None:
                     )
                     _fc, _fd = st.columns(2)
                     _nova_filial_r = _fc.text_input(
-                        "Filial Restrita (vazio = sem restrição)",
+                        "Filial Restrita (vírgula p/ múltiplas)",
                         value=_udata.get("filial_restrita") or "",
                     )
-                    _nova_senha = _fd.text_input(
+                    _nova_regiao_r = _fd.text_input(
+                        "Região Restrita",
+                        value=_udata.get("regiao_restrita") or "",
+                    )
+                    _nova_senha = st.text_input(
                         "Nova Senha (vazio = manter atual)",
                         type="password",
                     )
@@ -2383,6 +2414,9 @@ if _perfil == "admin" and tab_admin is not None:
                         _db[_uemail]["perfil"] = _novo_perfil
                         _db[_uemail]["filial_restrita"] = (
                             _nova_filial_r.strip().upper() or None
+                        )
+                        _db[_uemail]["regiao_restrita"] = (
+                            _nova_regiao_r.strip().upper() or None
                         )
                         if _nova_senha:
                             _db[_uemail]["senha"] = _nova_senha
