@@ -12,7 +12,7 @@ import json
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="Matriz de Performance",
+    page_title="Resumo Geral de Oportunidades e Performance",
     layout="wide"
 )
 
@@ -64,15 +64,25 @@ def _save_usuarios(data):
         pass  # No Streamlit Cloud, alterações não persistem entre reinicializações
 
 if "usuario" not in st.session_state:
-    _, _col_login, _ = st.columns([1, 1.2, 1])
+    st.markdown("""
+    <style>
+        section[data-testid="stMain"] .block-container {
+            padding-top: 5vh !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    _, _col_login, _ = st.columns([1, 1.4, 1])
     with _col_login:
         try:
-            st.image("dados/logo_pme.png", use_container_width=True)
+            _li, _lc, _lr = st.columns([1, 2, 1])
+            with _lc:
+                st.image("dados/logo_pme.png", use_container_width=True)
         except Exception:
             pass
         st.markdown(
-            """<h2 style='text-align:center; margin-bottom:24px; margin-top:16px;'>
-            Matriz de Performance</h2>""",
+            "<h3 style='text-align:center; margin-bottom:16px; margin-top:6px; "
+            "font-size:19px; font-weight:600;'>"
+            "Resumo Geral de Oportunidades e Performance</h3>",
             unsafe_allow_html=True
         )
         with st.form("login_form"):
@@ -83,6 +93,13 @@ if "usuario" not in st.session_state:
             _login_btn = st.form_submit_button(
                 "Entrar", use_container_width=True, type="primary"
             )
+        st.markdown(
+            "<div style='text-align:center; margin-top:10px;'>"
+            "<a href='https://wa.me/+5527999981134' target='_blank' "
+            "style='font-size:13px; color:#25D366; text-decoration:none;'>"
+            "💬 Esqueceu sua senha? Fale conosco</a></div>",
+            unsafe_allow_html=True
+        )
         if _login_btn:
             _usuarios_db = _load_usuarios()
             _u = _usuarios_db.get(_email_input)
@@ -106,7 +123,11 @@ if "usuario" not in st.session_state:
 # --- Variáveis de sessão ---
 _perfil          = st.session_state.get("perfil", "geral")
 _nome            = st.session_state.get("nome", "")
-_filial_restrita = st.session_state.get("filial_restrita")   # None | "LINHARES"
+_filial_restrita  = st.session_state.get("filial_restrita")   # None | "LINHARES" | "BOM JESUS,URUCUI"
+_filiais_restritas = (
+    [f.strip() for f in _filial_restrita.split(",") if f.strip()]
+    if _filial_restrita else None
+)
 
 # =========================
 # HEADER
@@ -415,6 +436,10 @@ dashboard.drop(
     inplace=True
 )
 
+# ── Restrição de acesso por filial(is) ──────────────────────────────────────
+if _filiais_restritas:
+    dashboard = dashboard[dashboard["Filial"].isin(_filiais_restritas)]
+
 # =========================
 # SIDEBAR
 # =========================
@@ -442,23 +467,23 @@ if st.sidebar.button("🚪 Sair", use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.title("Filtros")
 
-if _filial_restrita:
-    # Usuário com acesso restrito a uma filial
-    filial = _filial_restrita
+if _filiais_restritas:
+    # dashboard já foi pré-filtrado para as filiais deste usuário
+    filial = _filiais_restritas[0] if len(_filiais_restritas) == 1 else "Todas"
+    _label_filiais = " + ".join(_filiais_restritas)
     st.sidebar.markdown(
         f"""<div style='font-size:13px; color:#888; margin-bottom:10px;
             border:1px solid #ddd; border-radius:6px; padding:6px 10px;
             background:#f9f9f9;'>
-            🔒 <b>Filial:</b> {_filial_restrita}
+            🔒 <b>{'Filial' if len(_filiais_restritas)==1 else 'Filiais'}:</b>
+            {_label_filiais}
         </div>""",
         unsafe_allow_html=True
     )
-    _regioes_filial = sorted(
-        dashboard[dashboard["Filial"] == _filial_restrita]["Região"]
-        .dropna()
-        .unique()
+    regiao = st.sidebar.selectbox(
+        "Região",
+        ["Todas"] + sorted(dashboard["Região"].dropna().unique())
     )
-    regiao = st.sidebar.selectbox("Região", ["Todas"] + _regioes_filial)
 else:
     regiao = st.sidebar.selectbox(
         "Região",
@@ -1398,8 +1423,9 @@ with tab3:
             matriz["Região"] == regiao
         ]
 
-    if filial != "Todas":
-
+    if _filiais_restritas:
+        matriz = matriz[matriz["Filial"].isin(_filiais_restritas)]
+    elif filial != "Todas":
         matriz = matriz[
             matriz["Filial"] == filial
         ]
