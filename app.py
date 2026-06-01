@@ -968,6 +968,7 @@ with tab1:
                 COL_VEND,
                 "Filial",
                 "Região",
+                "Razão do Status",
                 "Valor Total",
                 "Dias desde Criação",
                 "Criador",
