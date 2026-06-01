@@ -6,3 +6,4 @@ geopandas
 folium
 streamlit-folium
 pyogrio
+streamlit-cookies-controller

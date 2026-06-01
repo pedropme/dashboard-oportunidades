@@ -7,6 +7,8 @@ import os
 import datetime
 import subprocess
 import json
+import time
+from streamlit_cookies_controller import CookieController
 
 # =========================
 # CONFIG
@@ -64,7 +66,26 @@ def _save_usuarios(data):
     except Exception:
         pass  # No Streamlit Cloud, alterações não persistem entre reinicializações
 
+# Controlador de cookies — inicializado antes de qualquer st.stop()
+# para que funcione tanto na tela de login quanto no dashboard.
+_cookies = CookieController(key="pme_cookies")
+
 if "usuario" not in st.session_state:
+    # ── Tentar restaurar sessão a partir do cookie (login persistente) ──
+    _auth_raw = _cookies.get("pme_auth")
+    if _auth_raw:
+        try:
+            _auth_data = json.loads(_auth_raw)
+            if _auth_data.get("exp", 0) > time.time():
+                st.session_state.usuario         = _auth_data["usuario"]
+                st.session_state.perfil          = _auth_data.get("perfil", "geral")
+                st.session_state.nome            = _auth_data.get("nome", "")
+                st.session_state.filial_restrita = _auth_data.get("filial_restrita")
+                st.session_state.regiao_restrita = _auth_data.get("regiao_restrita")
+                st.rerun()
+        except Exception:
+            pass  # Cookie inválido ou corrompido — segue para login
+
     st.markdown("""
     <style>
         section[data-testid="stMain"] .block-container {
@@ -117,6 +138,22 @@ if "usuario" not in st.session_state:
                     "%d/%m/%Y %H:%M"
                 )
                 _save_usuarios(_usuarios_db)
+                # Grava cookie com validade de 1 hora
+                _cookies.set(
+                    "pme_auth",
+                    json.dumps({
+                        "usuario":         _email_input,
+                        "perfil":          _u.get("perfil", "geral"),
+                        "nome":            _u.get(
+                            "nome",
+                            _email_input.split("@")[0].split(".")[0].capitalize()
+                        ),
+                        "filial_restrita": _u.get("filial_restrita"),
+                        "regiao_restrita": _u.get("regiao_restrita"),
+                        "exp":             time.time() + 3600,
+                    }),
+                    max_age=3600,
+                )
                 st.rerun()
             else:
                 st.error("E-mail ou senha incorretos.")
@@ -466,6 +503,7 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 if st.sidebar.button("🚪 Sair", use_container_width=True):
+    _cookies.remove("pme_auth")
     st.session_state.clear()
     st.rerun()
 
