@@ -2155,6 +2155,8 @@ with tab3:
                 _rk_rq4  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [10, 11, 12])
 
                 def _rk_score(real, meta, base):
+                    if pd.isna(real) or pd.isna(meta):
+                        return 0.0
                     if meta <= 0 or real < meta:
                         return 0.0
                     return base + base * min((real - meta) / meta, 1.0) * 0.20
@@ -2181,7 +2183,7 @@ with tab3:
                 + [_rk_q3pct] * int(_mes_atual >= 7)
                 + [_rk_q4pct] * int(_mes_atual >= 10)
             )
-            _rk_media = round(sum(_rk_vals) / len(_rk_vals)) if _rk_vals else 0
+            _rk_media = round(sum(_rk_vals) / len(_rk_vals), 1) if _rk_vals else 0
 
             _ranking_rows.append({
                 "Consultor": _rk_cons,
