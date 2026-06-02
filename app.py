@@ -2128,6 +2128,99 @@ with tab3:
     with col_qf:
         st.metric("FINAL", "0")
 
+    # =====================================================
+    # RANKING DE CONSULTORES
+    # =====================================================
+    st.markdown("---")
+    mostrar_ranking = st.checkbox(
+        "🏆 Mostrar ranking de consultores", value=False
+    )
+
+    if mostrar_ranking:
+        st.markdown("### 🏆 Ranking de Consultores")
+
+        _ranking_rows = []
+        for _rk_cons in sorted(matriz["CONSULTOR"].dropna().unique()):
+            _rk_mc = matriz[matriz["CONSULTOR"] == _rk_cons]
+            _rk_n  = len(_rk_mc)
+            if _rk_n == 0:
+                continue
+
+            _rk_pq1 = _rk_pq2 = _rk_pq3 = _rk_pq4 = 0
+
+            for _, _rk_row in _rk_mc.iterrows():
+                _rk_prod = _rk_row["PRODUTO"]
+                _rk_mq1  = _rk_row["JAN"] + _rk_row["FEV"] + _rk_row["MAR"]
+                _rk_mq2  = _rk_row["ABR"] + _rk_row["MAI"] + _rk_row["JUN"]
+                _rk_mq3  = _rk_row["JUL"] + _rk_row["AGO"] + _rk_row["SET"]
+                _rk_mq4  = _rk_row["OUT"] + _rk_row["NOV"] + _rk_row["DEZ"]
+                _rk_rq1  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [1, 2, 3])
+                _rk_rq2  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [4, 5, 6])
+                _rk_rq3  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [7, 8, 9])
+                _rk_rq4  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [10, 11, 12])
+                _rk_pq1 += 10 if _rk_mq1 > 0 and _rk_rq1 >= _rk_mq1 else 0
+                _rk_pq2 += 10 if _rk_mq2 > 0 and _rk_rq2 >= _rk_mq2 else 0
+                _rk_pq3 += 10 if _rk_mq3 > 0 and _rk_rq3 >= _rk_mq3 else 0
+                _rk_pq4 += 10 if _rk_mq4 > 0 and _rk_rq4 >= _rk_mq4 else 0
+
+            _rk_max    = _rk_n * 10
+            _rk_filial = (
+                _rk_mc["Filial"].dropna().iloc[0]
+                if not _rk_mc["Filial"].dropna().empty else "-"
+            )
+
+            _ranking_rows.append({
+                "Consultor": _rk_cons,
+                "Filial":    _rk_filial,
+                "Q1 Pts":    f"{_rk_pq1}/{_rk_max}",
+                "Q1 %":      round(_rk_pq1 / _rk_max * 100) if _rk_max > 0 else 0,
+                "Q2 Pts":    f"{_rk_pq2}/{_rk_max}",
+                "Q2 %":      round(_rk_pq2 / _rk_max * 100) if _rk_max > 0 else 0,
+                "Q3 Pts":    f"{_rk_pq3}/{_rk_max}",
+                "Q3 %":      round(_rk_pq3 / _rk_max * 100) if _rk_max > 0 else 0,
+                "Q4 Pts":    f"{_rk_pq4}/{_rk_max}",
+                "Q4 %":      round(_rk_pq4 / _rk_max * 100) if _rk_max > 0 else 0,
+            })
+
+        if _ranking_rows:
+            _df_rk = pd.DataFrame(_ranking_rows)
+
+            # Ordenação por trimestre (dropdown compacto)
+            _rk_col, _ = st.columns([2, 5])
+            with _rk_col:
+                _rk_sort = st.selectbox(
+                    "Ordenar por",
+                    ["Q1 %", "Q2 %", "Q3 %", "Q4 %"],
+                    index=0,
+                    key="rk_sort_col",
+                )
+
+            _df_rk = (
+                _df_rk
+                .sort_values(_rk_sort, ascending=False)
+                .reset_index(drop=True)
+            )
+            _df_rk.index += 1
+            _df_rk.index.name = "Pos"
+
+            st.dataframe(
+                _df_rk,
+                use_container_width=True,
+                hide_index=False,
+                column_config={
+                    "Q1 Pts": st.column_config.TextColumn("Q1 Pts", width="small"),
+                    "Q1 %":   st.column_config.NumberColumn("Q1 %",  width="small", format="%d%%"),
+                    "Q2 Pts": st.column_config.TextColumn("Q2 Pts", width="small"),
+                    "Q2 %":   st.column_config.NumberColumn("Q2 %",  width="small", format="%d%%"),
+                    "Q3 Pts": st.column_config.TextColumn("Q3 Pts", width="small"),
+                    "Q3 %":   st.column_config.NumberColumn("Q3 %",  width="small", format="%d%%"),
+                    "Q4 Pts": st.column_config.TextColumn("Q4 Pts", width="small"),
+                    "Q4 %":   st.column_config.NumberColumn("Q4 %",  width="small", format="%d%%"),
+                },
+            )
+        else:
+            st.info("Nenhum consultor encontrado para os filtros selecionados.")
+
 # =====================================================
 # MÉDIA FINAL DO CONSULTOR
 # =====================================================
