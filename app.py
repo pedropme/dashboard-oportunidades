@@ -2139,6 +2139,9 @@ with tab3:
     if mostrar_ranking:
         st.markdown("### 🏆 Ranking de Consultores")
 
+        # Trimestres que já iniciaram (para calcular a média)
+        _mes_atual = pd.Timestamp.today().month
+
         _ranking_rows = []
         for _rk_cons in sorted(matriz["CONSULTOR"].dropna().unique()):
             _rk_mc = matriz[matriz["CONSULTOR"] == _rk_cons]
@@ -2169,13 +2172,28 @@ with tab3:
                 if not _rk_mc["Filial"].dropna().empty else "-"
             )
 
+            _rk_q1pct = round(_rk_pq1 / _rk_max * 100) if _rk_max > 0 else 0
+            _rk_q2pct = round(_rk_pq2 / _rk_max * 100) if _rk_max > 0 else 0
+            _rk_q3pct = round(_rk_pq3 / _rk_max * 100) if _rk_max > 0 else 0
+            _rk_q4pct = round(_rk_pq4 / _rk_max * 100) if _rk_max > 0 else 0
+
+            # Média apenas dos trimestres já iniciados
+            _rk_vals = (
+                [_rk_q1pct] * int(_mes_atual >= 1)
+                + [_rk_q2pct] * int(_mes_atual >= 4)
+                + [_rk_q3pct] * int(_mes_atual >= 7)
+                + [_rk_q4pct] * int(_mes_atual >= 10)
+            )
+            _rk_media = round(sum(_rk_vals) / len(_rk_vals)) if _rk_vals else 0
+
             _ranking_rows.append({
                 "Consultor": _rk_cons,
                 "Filial":    _rk_filial,
-                "Q1 %":      round(_rk_pq1 / _rk_max * 100) if _rk_max > 0 else 0,
-                "Q2 %":      round(_rk_pq2 / _rk_max * 100) if _rk_max > 0 else 0,
-                "Q3 %":      round(_rk_pq3 / _rk_max * 100) if _rk_max > 0 else 0,
-                "Q4 %":      round(_rk_pq4 / _rk_max * 100) if _rk_max > 0 else 0,
+                "Q1 %":      _rk_q1pct,
+                "Q2 %":      _rk_q2pct,
+                "Q3 %":      _rk_q3pct,
+                "Q4 %":      _rk_q4pct,
+                "Média":     _rk_media,
             })
 
         if _ranking_rows:
@@ -2186,7 +2204,7 @@ with tab3:
             with _rk_col:
                 _rk_sort = st.selectbox(
                     "Ordenar por",
-                    ["Q1 %", "Q2 %", "Q3 %", "Q4 %"],
+                    ["Média", "Q1 %", "Q2 %", "Q3 %", "Q4 %"],
                     index=0,
                     key="rk_sort_col",
                 )
@@ -2204,10 +2222,11 @@ with tab3:
                 use_container_width=True,
                 hide_index=False,
                 column_config={
-                    "Q1 %": st.column_config.NumberColumn("Q1 %", width="small", format="%d%%"),
-                    "Q2 %": st.column_config.NumberColumn("Q2 %", width="small", format="%d%%"),
-                    "Q3 %": st.column_config.NumberColumn("Q3 %", width="small", format="%d%%"),
-                    "Q4 %": st.column_config.NumberColumn("Q4 %", width="small", format="%d%%"),
+                    "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%d%%"),
+                    "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%d%%"),
+                    "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%d%%"),
+                    "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%d%%"),
+                    "Média": st.column_config.NumberColumn("Média", width="small", format="%d%%"),
                 },
             )
         else:
