@@ -1566,6 +1566,7 @@ with tab3:
     meta_q4_total = 0
 
     n_produtos = len(matriz_consultor)
+    _base_pct  = (100 / n_produtos) if n_produtos > 0 else 0  # % base por produto
 
     # Inicializado aqui para evitar NameError no bloco else
     # (o valor correto é recalculado após o loop de produtos)
@@ -2051,7 +2052,11 @@ with tab3:
             def calc_ponto(real, meta):
                 real = 0 if pd.isna(real) else real
                 meta = 0 if pd.isna(meta) else meta
-                return 10 if meta > 0 and real >= meta else 0
+                if meta <= 0 or real < meta:
+                    return 0.0
+                # Bônus proporcional ao excesso acima da meta, até dobrar (máx +20%)
+                excess_ratio = min((real - meta) / meta, 1.0)
+                return _base_pct + _base_pct * excess_ratio * 0.20
 
             # =========================
             # PONTUAÇÃO POR TRIMESTRE
@@ -2073,22 +2078,7 @@ with tab3:
                 "pontuacao": pontuacao_total_produto
             })
 
-            pontos = {
-                "Q1": p_q1,
-                "Q2": p_q2,
-                "Q3": p_q3,
-                "Q4": p_q4
-            }
-
-            pontos_total = next((pontos[q] for q in ["Q4","Q3","Q2","Q1"] if pontos[q] is not None), 0)
-
-            score_df = pd.DataFrame({
-                "Q1": [p_q1],
-                "Q2": [p_q2],
-                "Q3": [p_q3],
-                "Q4": [p_q4],
-                "TOTAL": [pontos_total]
-            })
+            pontos_total = p_q1 + p_q2 + p_q3 + p_q4
 
             st.markdown("### Pontuação por Trimestre")
 
@@ -2101,29 +2091,30 @@ with tab3:
                 [p_q1, p_q2, p_q3, p_q4, pontos_total]
             ):
                 with _col:
-                    st.metric(_lbl, _val)
+                    st.metric(_lbl, f"{_val:.1f}%")
           
     # =====================================================
     # PONTUAÇÃO PONDERADA POR TRIMESTRE (calculada pós-loop)
     # =====================================================
     # Máximo por trimestre = n_produtos × 10 pts
     # q_final = (pontos_obtidos / máximo) × 100
-    q1_final = (total_p_q1 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
-    q2_final = (total_p_q2 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
-    q3_final = (total_p_q3 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
-    q4_final = (total_p_q4 / (n_produtos * 10)) * 100 if n_produtos > 0 else 0
+    # total_p_qN já acumula % direto (soma das pontuações por produto no trimestre)
+    q1_final = total_p_q1
+    q2_final = total_p_q2
+    q3_final = total_p_q3
+    q4_final = total_p_q4
 
     with col_q1:
-        st.metric("Q1", f"{q1_final:.0f}")
+        st.metric("Q1", f"{q1_final:.1f}%")
 
     with col_q2:
-        st.metric("Q2", f"{q2_final:.0f}")
+        st.metric("Q2", f"{q2_final:.1f}%")
 
     with col_q3:
-        st.metric("Q3", f"{q3_final:.0f}")
+        st.metric("Q3", f"{q3_final:.1f}%")
 
     with col_q4:
-        st.metric("Q4", f"{q4_final:.0f}")
+        st.metric("Q4", f"{q4_final:.1f}%")
 
     with col_qf:
         st.metric("FINAL", "0")
@@ -2149,7 +2140,8 @@ with tab3:
             if _rk_n == 0:
                 continue
 
-            _rk_pq1 = _rk_pq2 = _rk_pq3 = _rk_pq4 = 0
+            _rk_base = (100 / _rk_n) if _rk_n > 0 else 0
+            _rk_pq1 = _rk_pq2 = _rk_pq3 = _rk_pq4 = 0.0
 
             for _, _rk_row in _rk_mc.iterrows():
                 _rk_prod = _rk_row["PRODUTO"]
@@ -2161,21 +2153,26 @@ with tab3:
                 _rk_rq2  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [4, 5, 6])
                 _rk_rq3  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [7, 8, 9])
                 _rk_rq4  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [10, 11, 12])
-                _rk_pq1 += 10 if _rk_mq1 > 0 and _rk_rq1 >= _rk_mq1 else 0
-                _rk_pq2 += 10 if _rk_mq2 > 0 and _rk_rq2 >= _rk_mq2 else 0
-                _rk_pq3 += 10 if _rk_mq3 > 0 and _rk_rq3 >= _rk_mq3 else 0
-                _rk_pq4 += 10 if _rk_mq4 > 0 and _rk_rq4 >= _rk_mq4 else 0
 
-            _rk_max    = _rk_n * 10
+                def _rk_score(real, meta, base):
+                    if meta <= 0 or real < meta:
+                        return 0.0
+                    return base + base * min((real - meta) / meta, 1.0) * 0.20
+
+                _rk_pq1 += _rk_score(_rk_rq1, _rk_mq1, _rk_base)
+                _rk_pq2 += _rk_score(_rk_rq2, _rk_mq2, _rk_base)
+                _rk_pq3 += _rk_score(_rk_rq3, _rk_mq3, _rk_base)
+                _rk_pq4 += _rk_score(_rk_rq4, _rk_mq4, _rk_base)
+
             _rk_filial = (
                 _rk_mc["Filial"].dropna().iloc[0]
                 if not _rk_mc["Filial"].dropna().empty else "-"
             )
 
-            _rk_q1pct = round(_rk_pq1 / _rk_max * 100) if _rk_max > 0 else 0
-            _rk_q2pct = round(_rk_pq2 / _rk_max * 100) if _rk_max > 0 else 0
-            _rk_q3pct = round(_rk_pq3 / _rk_max * 100) if _rk_max > 0 else 0
-            _rk_q4pct = round(_rk_pq4 / _rk_max * 100) if _rk_max > 0 else 0
+            _rk_q1pct = round(_rk_pq1, 1)
+            _rk_q2pct = round(_rk_pq2, 1)
+            _rk_q3pct = round(_rk_pq3, 1)
+            _rk_q4pct = round(_rk_pq4, 1)
 
             # Média apenas dos trimestres já iniciados
             _rk_vals = (
@@ -2222,11 +2219,11 @@ with tab3:
                 use_container_width=True,
                 hide_index=False,
                 column_config={
-                    "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%d%%"),
-                    "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%d%%"),
-                    "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%d%%"),
-                    "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%d%%"),
-                    "Média": st.column_config.NumberColumn("Média", width="small", format="%d%%"),
+                    "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%.1f%%"),
+                    "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%.1f%%"),
+                    "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%.1f%%"),
+                    "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%.1f%%"),
+                    "Média": st.column_config.NumberColumn("Média", width="small", format="%.1f%%"),
                 },
             )
         else:
