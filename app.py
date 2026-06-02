@@ -2172,13 +2172,9 @@ with tab3:
             _ranking_rows.append({
                 "Consultor": _rk_cons,
                 "Filial":    _rk_filial,
-                "Q1 Pts":    f"{_rk_pq1}/{_rk_max}",
                 "Q1 %":      round(_rk_pq1 / _rk_max * 100) if _rk_max > 0 else 0,
-                "Q2 Pts":    f"{_rk_pq2}/{_rk_max}",
                 "Q2 %":      round(_rk_pq2 / _rk_max * 100) if _rk_max > 0 else 0,
-                "Q3 Pts":    f"{_rk_pq3}/{_rk_max}",
                 "Q3 %":      round(_rk_pq3 / _rk_max * 100) if _rk_max > 0 else 0,
-                "Q4 Pts":    f"{_rk_pq4}/{_rk_max}",
                 "Q4 %":      round(_rk_pq4 / _rk_max * 100) if _rk_max > 0 else 0,
             })
 
@@ -2208,14 +2204,10 @@ with tab3:
                 use_container_width=True,
                 hide_index=False,
                 column_config={
-                    "Q1 Pts": st.column_config.TextColumn("Q1 Pts", width="small"),
-                    "Q1 %":   st.column_config.NumberColumn("Q1 %",  width="small", format="%d%%"),
-                    "Q2 Pts": st.column_config.TextColumn("Q2 Pts", width="small"),
-                    "Q2 %":   st.column_config.NumberColumn("Q2 %",  width="small", format="%d%%"),
-                    "Q3 Pts": st.column_config.TextColumn("Q3 Pts", width="small"),
-                    "Q3 %":   st.column_config.NumberColumn("Q3 %",  width="small", format="%d%%"),
-                    "Q4 Pts": st.column_config.TextColumn("Q4 Pts", width="small"),
-                    "Q4 %":   st.column_config.NumberColumn("Q4 %",  width="small", format="%d%%"),
+                    "Q1 %": st.column_config.NumberColumn("Q1 %", width="small", format="%d%%"),
+                    "Q2 %": st.column_config.NumberColumn("Q2 %", width="small", format="%d%%"),
+                    "Q3 %": st.column_config.NumberColumn("Q3 %", width="small", format="%d%%"),
+                    "Q4 %": st.column_config.NumberColumn("Q4 %", width="small", format="%d%%"),
                 },
             )
         else:
