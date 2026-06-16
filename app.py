@@ -1516,6 +1516,31 @@ with tab3:
         vendedor_bi = "Todos"
 
     # =====================================================
+    # CONTROLES DE VISÃO E TIPO DE META
+    # =====================================================
+    _col_seg, _col_gap, _col_meta = st.columns([3, 1, 5])
+
+    with _col_seg:
+        _seg_visao = st.radio(
+            "Visão",
+            ["Consultor", "Loja"],
+            horizontal=True,
+            key="seg_visao",
+            label_visibility="collapsed",
+        )
+
+    with _col_meta:
+        _tipo_meta = st.radio(
+            "Tipo de Meta",
+            ["Matriz de Performance", "Orçamento"],
+            horizontal=True,
+            key="tipo_meta",
+            disabled=(_seg_visao == "Consultor"),
+        )
+
+    st.markdown("---")
+
+    # =====================================================
     # SELECT CONSULTOR
     # =====================================================
     lista_consultores = sorted(
