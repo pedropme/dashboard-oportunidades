@@ -333,9 +333,14 @@ def load_rel_prod():
 @st.cache_data
 def load_metas_loja():
     df = pd.read_excel("dados/metas.xlsx", sheet_name="LOJA")
-    for col in ["NOME", "PRODUTO", "STATUS"]:
+    for col in ["NOME", "PRODUTO", "FILIAL", "REGIÃO"]:
         if col in df.columns:
             df[col] = normalizar(df[col])
+    # Extrai o nome da filial do território a partir de "PME - NOME_FILIAL"
+    import re as _re
+    df["FILIAL_NOME"] = df["NOME"].str.replace(
+        r"^PME\s*-\s*", "", regex=True
+    ).str.strip()
     return df
 
 clientes            = load_clientes()
@@ -1578,7 +1583,7 @@ with tab3:
 
         # ── MODO LOJA ──────────────────────────────────────────────────────────
 
-        # Realizado agregado por filial/loja
+        # Realizado agregado por filial/loja (usando nome do território)
         _ter_map = (
             territorio[["NOME BI", "Filial"]]
             .drop_duplicates(subset=["NOME BI"])
@@ -1589,33 +1594,32 @@ with tab3:
             .groupby(["Filial", "PRODUTO", "MES"])["REALIZADO"]
             .sum()
             .reset_index()
-            .rename(columns={"Filial": "NOME"})
+        )
+
+        # Mapeamento NOME_LOJA → FILIAL_NOME (nome do território)
+        _nome_to_filial = dict(
+            zip(metas_loja["NOME"], metas_loja["FILIAL_NOME"])
         )
 
         def buscar_realizado_loja(nome, produto, mes):
+            filial_nome = _nome_to_filial.get(nome, nome)
             f = _real_loja[
-                (_real_loja["NOME"] == nome)
+                (_real_loja["Filial"] == filial_nome)
                 & (_real_loja["PRODUTO"] == produto)
                 & (_real_loja["MES"] == mes)
             ]
             return f["REALIZADO"].sum() if not f.empty else 0
 
-        # Filtrar metas_loja por STATUS e filtros do sidebar
-        _ml = metas_loja[
-            metas_loja["STATUS"].str.contains("ATIVO", na=False)
-        ].copy()
+        # Filtrar metas_loja pelos filtros do sidebar
+        _ml = metas_loja.copy()
 
         if regiao != "Todas":
-            _fils_reg = (
-                territorio[territorio["Região"] == regiao]["Filial"]
-                .dropna().unique()
-            )
-            _ml = _ml[_ml["NOME"].isin(_fils_reg)]
+            _ml = _ml[_ml["REGIÃO"].str.upper() == regiao.upper()]
 
         if _filiais_restritas:
-            _ml = _ml[_ml["NOME"].isin(_filiais_restritas)]
+            _ml = _ml[_ml["FILIAL_NOME"].isin(_filiais_restritas)]
         elif filial != "Todas":
-            _ml = _ml[_ml["NOME"] == filial]
+            _ml = _ml[_ml["FILIAL_NOME"] == filial]
 
         lista_lojas = sorted(_ml["NOME"].dropna().unique().tolist())
 
