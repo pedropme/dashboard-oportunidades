@@ -330,18 +330,26 @@ def load_rel_prod():
     df["Data de Criação"] = pd.to_datetime(df["Data de Criação"], dayfirst=True, errors="coerce")
     return df
 
-@st.cache_data
-def load_metas_loja():
-    df = pd.read_excel("dados/metas.xlsx", sheet_name="LOJA")
+def _normalizar_sheet_loja(df):
     for col in ["NOME", "PRODUTO", "FILIAL", "REGIÃO"]:
         if col in df.columns:
             df[col] = normalizar(df[col])
-    # Extrai o nome da filial do território a partir de "PME - NOME_FILIAL"
-    import re as _re
     df["FILIAL_NOME"] = df["NOME"].str.replace(
         r"^PME\s*-\s*", "", regex=True
     ).str.strip()
     return df
+
+@st.cache_data
+def load_metas_loja():
+    return _normalizar_sheet_loja(
+        pd.read_excel("dados/metas.xlsx", sheet_name="LOJA")
+    )
+
+@st.cache_data
+def load_metas_orcamento():
+    return _normalizar_sheet_loja(
+        pd.read_excel("dados/metas.xlsx", sheet_name="ORÇAMENTO")
+    )
 
 clientes            = load_clientes()
 opp                 = load_opp()
@@ -349,6 +357,7 @@ territorio          = load_territorio()
 vendas, realizado   = load_vendas_e_realizado()
 rel_prod            = load_rel_prod()
 metas_loja          = load_metas_loja()
+metas_orcamento     = load_metas_orcamento()
 
 # =========================
 # CRUZAMENTO MUNICÍPIO
@@ -1583,6 +1592,9 @@ with tab3:
 
         # ── MODO LOJA ──────────────────────────────────────────────────────────
 
+        # Fonte de metas: LOJA ou ORÇAMENTO conforme toggle 2
+        _fonte_loja = metas_orcamento if _tipo_meta == "Orçamento" else metas_loja
+
         # Realizado agregado por filial/loja (usando nome do território)
         _ter_map = (
             territorio[["NOME BI", "Filial"]]
@@ -1598,7 +1610,7 @@ with tab3:
 
         # Mapeamento NOME_LOJA → FILIAL_NOME (nome do território)
         _nome_to_filial = dict(
-            zip(metas_loja["NOME"], metas_loja["FILIAL_NOME"])
+            zip(_fonte_loja["NOME"], _fonte_loja["FILIAL_NOME"])
         )
 
         def buscar_realizado_loja(nome, produto, mes):
@@ -1610,8 +1622,8 @@ with tab3:
             ]
             return f["REALIZADO"].sum() if not f.empty else 0
 
-        # Filtrar metas_loja pelos filtros do sidebar
-        _ml = metas_loja.copy()
+        # Filtrar fonte de metas pelos filtros do sidebar
+        _ml = _fonte_loja.copy()
 
         if regiao != "Todas":
             _ml = _ml[_ml["REGIÃO"].str.upper() == regiao.upper()]
