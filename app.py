@@ -330,11 +330,20 @@ def load_rel_prod():
     df["Data de Criação"] = pd.to_datetime(df["Data de Criação"], dayfirst=True, errors="coerce")
     return df
 
+@st.cache_data
+def load_metas_loja():
+    df = pd.read_excel("dados/metas.xlsx", sheet_name="LOJA")
+    for col in ["NOME", "PRODUTO", "STATUS"]:
+        if col in df.columns:
+            df[col] = normalizar(df[col])
+    return df
+
 clientes            = load_clientes()
 opp                 = load_opp()
 territorio          = load_territorio()
 vendas, realizado   = load_vendas_e_realizado()
 rel_prod            = load_rel_prod()
+metas_loja          = load_metas_loja()
 
 # =========================
 # CRUZAMENTO MUNICÍPIO
@@ -1561,720 +1570,1012 @@ with tab3:
     st.markdown("---")
 
     # =====================================================
-    # SELECT CONSULTOR
+    # SELECT LOJA / SELECT CONSULTOR  (condicional por toggle)
     # =====================================================
-    lista_consultores = sorted(
-        matriz["CONSULTOR"]
-        .dropna()
-        .unique()
-        .tolist()
-    )
+    pontuacao_produtos = []  # inicializado antes do branch
 
-    if not lista_consultores:
-        st.warning(
-            "Nenhum consultor ativo encontrado para os filtros selecionados."
+    if _seg_visao == "Loja":
+
+        # ── MODO LOJA ──────────────────────────────────────────────────────────
+
+        # Realizado agregado por filial/loja
+        _ter_map = (
+            territorio[["NOME BI", "Filial"]]
+            .drop_duplicates(subset=["NOME BI"])
         )
-        st.stop()
-
-    # Pré-seleciona usando o nome BI (que é como aparece na lista)
-    default_idx = 0
-    if vendedor_bi != "Todos" and vendedor_bi in lista_consultores:
-        default_idx = lista_consultores.index(vendedor_bi)
-
-    consultor_matriz = st.selectbox(
-        "Consultor",
-        lista_consultores,
-        index=default_idx
-    )
-
-    matriz_consultor = matriz[
-        matriz["CONSULTOR"] == consultor_matriz
-    ].copy()
-
-    # =========================
-    # ACUMULADORES DE PONTUAÇÃO
-    # =========================
-
-    total_p_q1 = 0
-    total_p_q2 = 0
-    total_p_q3 = 0
-    total_p_q4 = 0
-
-    real_q1_total = 0
-    real_q2_total = 0
-    real_q3_total = 0
-    real_q4_total = 0
-
-    meta_q1_total = 0
-    meta_q2_total = 0
-    meta_q3_total = 0
-    meta_q4_total = 0
-
-    n_produtos = len(matriz_consultor)
-    _base_pct  = (100 / n_produtos) if n_produtos > 0 else 0  # % base por produto
-
-    # Inicializado aqui para evitar NameError no bloco else
-    # (o valor correto é recalculado após o loop de produtos)
-    media_pontuacao = 0
-
-    # =========================
-    # STATUS CONSULTOR
-    # =========================
-    if len(matriz_consultor) > 0:
-
-        status_consultor = "ATIVO"
-
-        filial_consultor = (
-            matriz_consultor["Filial"]
-            .dropna()
-            .iloc[0]
-            if matriz_consultor["Filial"].dropna().shape[0] > 0
-            else "-"
+        _real_loja = (
+            realizado
+            .merge(_ter_map, left_on="CONSULTOR", right_on="NOME BI", how="left")
+            .groupby(["Filial", "PRODUTO", "MES"])["REALIZADO"]
+            .sum()
+            .reset_index()
+            .rename(columns={"Filial": "NOME"})
         )
 
-        regiao_consultor = (
-            matriz_consultor["Região"]
-            .dropna()
-            .iloc[0]
-            if matriz_consultor["Região"].dropna().shape[0] > 0
-            else "-"
+        def buscar_realizado_loja(nome, produto, mes):
+            f = _real_loja[
+                (_real_loja["NOME"] == nome)
+                & (_real_loja["PRODUTO"] == produto)
+                & (_real_loja["MES"] == mes)
+            ]
+            return f["REALIZADO"].sum() if not f.empty else 0
+
+        # Filtrar metas_loja por STATUS e filtros do sidebar
+        _ml = metas_loja[
+            metas_loja["STATUS"].str.contains("ATIVO", na=False)
+        ].copy()
+
+        if regiao != "Todas":
+            _fils_reg = (
+                territorio[territorio["Região"] == regiao]["Filial"]
+                .dropna().unique()
+            )
+            _ml = _ml[_ml["NOME"].isin(_fils_reg)]
+
+        if _filiais_restritas:
+            _ml = _ml[_ml["NOME"].isin(_filiais_restritas)]
+        elif filial != "Todas":
+            _ml = _ml[_ml["NOME"] == filial]
+
+        lista_lojas = sorted(_ml["NOME"].dropna().unique().tolist())
+
+        if not lista_lojas:
+            st.warning("Nenhuma loja ativa encontrada para os filtros selecionados.")
+            st.stop()
+
+        loja_matriz = st.selectbox("Loja", lista_lojas, key="loja_sel")
+        _ml_sel = _ml[_ml["NOME"] == loja_matriz].copy()
+
+        # Acumuladores loja
+        _lp_q1 = _lp_q2 = _lp_q3 = _lp_q4 = 0.0
+        _n_prod_loja = len(_ml_sel)
+        _bpct_loja   = (100 / _n_prod_loja) if _n_prod_loja > 0 else 0
+
+        # Resumo trimestral (placeholder, preenchido pós-loop)
+        lcol_q1, lcol_q2, lcol_q3, lcol_q4, lcol_qf = st.columns(5)
+
+        # Loop de produtos (loja)
+        for _, _lrow in _ml_sel.iterrows():
+            _lprod  = _lrow["PRODUTO"]
+            _ljan   = _lrow["JAN"];  _lfev = _lrow["FEV"];  _lmar = _lrow["MAR"]
+            _labr   = _lrow["ABR"];  _lmai = _lrow["MAI"];  _ljun = _lrow["JUN"]
+            _ljul   = _lrow["JUL"];  _lago = _lrow["AGO"];  _lset = _lrow["SET"]
+            _lout   = _lrow["OUT"];  _lnov = _lrow["NOV"];  _ldez = _lrow["DEZ"]
+            _ltotal = _lrow["TOTAL"]
+
+            _lr_jan = buscar_realizado_loja(loja_matriz, _lprod, 1)
+            _lr_fev = buscar_realizado_loja(loja_matriz, _lprod, 2)
+            _lr_mar = buscar_realizado_loja(loja_matriz, _lprod, 3)
+            _lr_abr = buscar_realizado_loja(loja_matriz, _lprod, 4)
+            _lr_mai = buscar_realizado_loja(loja_matriz, _lprod, 5)
+            _lr_jun = buscar_realizado_loja(loja_matriz, _lprod, 6)
+            _lr_jul = buscar_realizado_loja(loja_matriz, _lprod, 7)
+            _lr_ago = buscar_realizado_loja(loja_matriz, _lprod, 8)
+            _lr_set = buscar_realizado_loja(loja_matriz, _lprod, 9)
+            _lr_out = buscar_realizado_loja(loja_matriz, _lprod, 10)
+            _lr_nov = buscar_realizado_loja(loja_matriz, _lprod, 11)
+            _lr_dez = buscar_realizado_loja(loja_matriz, _lprod, 12)
+
+            _lmq1 = _ljan + _lfev + _lmar
+            _lmq2 = _labr + _lmai + _ljun
+            _lmq3 = _ljul + _lago + _lset
+            _lmq4 = _lout + _lnov + _ldez
+
+            _lrq1 = _lr_jan + _lr_fev + _lr_mar
+            _lrq2 = _lr_abr + _lr_mai + _lr_jun
+            _lrq3 = _lr_jul + _lr_ago + _lr_set
+            _lrq4 = _lr_out + _lr_nov + _lr_dez
+
+            with st.expander(f"{_lprod}"):
+                st.markdown(f"### {_lprod}")
+
+                _l_is_mon = _lprod in ["IMPLEMENTO", "USADOS"]
+                if _l_is_mon:
+                    _lfmt = lambda x: (
+                        "R$ " + f"{round(x):,}".replace(",", ".")
+                        if pd.notna(x) else ""
+                    )
+                else:
+                    _lfmt = lambda x: f"{x:.0f}" if pd.notna(x) else ""
+
+                def _lhigh(col):
+                    if col.name in ["1 TRI", "2 TRI", "3 TRI", "4 TRI"]:
+                        return [
+                            "background-color: #d6d6d6; color: black; font-weight: bold"
+                        ] * len(col)
+                    return [""] * len(col)
+
+                _l17 = [
+                    "Jan", "Fev", "Mar", "1 TRI",
+                    "Abr", "Mai", "Jun", "2 TRI",
+                    "Jul", "Ago", "Set", "3 TRI",
+                    "Out", "Nov", "Dez", "4 TRI", "TOTAL",
+                ]
+                _lcol_cfg = {
+                    c: st.column_config.TextColumn(c, width="small") for c in _l17
+                }
+
+                st.markdown("#### Meta")
+                _lmeta_df = pd.DataFrame({
+                    "Jan": [_ljan],  "Fev": [_lfev],  "Mar": [_lmar],  "1 TRI": [_lmq1],
+                    "Abr": [_labr],  "Mai": [_lmai],  "Jun": [_ljun],  "2 TRI": [_lmq2],
+                    "Jul": [_ljul],  "Ago": [_lago],  "Set": [_lset],  "3 TRI": [_lmq3],
+                    "Out": [_lout],  "Nov": [_lnov],  "Dez": [_ldez],  "4 TRI": [_lmq4],
+                    "TOTAL": [_ltotal],
+                })
+                st.dataframe(
+                    _lmeta_df.style.format(_lfmt).apply(_lhigh, axis=0),
+                    use_container_width=True, hide_index=True, column_config=_lcol_cfg,
+                )
+
+                st.markdown("#### Realizado")
+                _lreal_df = pd.DataFrame({
+                    "Jan": [_lr_jan], "Fev": [_lr_fev], "Mar": [_lr_mar], "1 TRI": [_lrq1],
+                    "Abr": [_lr_abr], "Mai": [_lr_mai], "Jun": [_lr_jun], "2 TRI": [_lrq2],
+                    "Jul": [_lr_jul], "Ago": [_lr_ago], "Set": [_lr_set], "3 TRI": [_lrq3],
+                    "Out": [_lr_out], "Nov": [_lr_nov], "Dez": [_lr_dez], "4 TRI": [_lrq4],
+                    "TOTAL": [_lrq1 + _lrq2 + _lrq3 + _lrq4],
+                })
+                st.dataframe(
+                    _lreal_df.style.format(_lfmt).apply(_lhigh, axis=0),
+                    use_container_width=True, hide_index=True, column_config=_lcol_cfg,
+                )
+
+                st.markdown("#### Diferença")
+                _ldif_df = (
+                    _lreal_df.iloc[0]
+                    .subtract(_lmeta_df.iloc[0], fill_value=0)
+                    .to_frame().T.reset_index(drop=True)
+                )
+                st.dataframe(
+                    _ldif_df.style.format(_lfmt).apply(_lhigh, axis=0),
+                    use_container_width=True, hide_index=True, column_config=_lcol_cfg,
+                )
+
+                def _lcalc(real, meta):
+                    if pd.isna(real) or pd.isna(meta): return 0.0
+                    if meta <= 0 or real < meta: return 0.0
+                    return _bpct_loja + _bpct_loja * min((real - meta) / meta, 1.0) * 0.20
+
+                _lpq1 = _lcalc(_lrq1, _lmq1)
+                _lpq2 = _lcalc(_lrq2, _lmq2)
+                _lpq3 = _lcalc(_lrq3, _lmq3)
+                _lpq4 = _lcalc(_lrq4, _lmq4)
+
+                _lp_q1 += _lpq1
+                _lp_q2 += _lpq2
+                _lp_q3 += _lpq3
+                _lp_q4 += _lpq4
+
+                _lpontos = _lpq1 + _lpq2 + _lpq3 + _lpq4
+                pontuacao_produtos.append({"produto": _lprod, "pontuacao": _lpontos})
+
+                st.markdown("### Pontuação por Trimestre")
+                _lsc = st.columns([4, 4, 4, 4, 1])
+                for _lc, _ll, _lv in zip(
+                    _lsc,
+                    ["Q1", "Q2", "Q3", "Q4", "TOTAL"],
+                    [_lpq1, _lpq2, _lpq3, _lpq4, _lpontos],
+                ):
+                    with _lc:
+                        st.metric(_ll, f"{_lv:.1f}%")
+
+        # Preencher resumo trimestral
+        with lcol_q1: st.metric("Q1",    f"{_lp_q1:.1f}%")
+        with lcol_q2: st.metric("Q2",    f"{_lp_q2:.1f}%")
+        with lcol_q3: st.metric("Q3",    f"{_lp_q3:.1f}%")
+        with lcol_q4: st.metric("Q4",    f"{_lp_q4:.1f}%")
+        with lcol_qf: st.metric("FINAL", "0")
+
+        # Ranking de lojas
+        st.markdown("---")
+        mostrar_ranking = st.checkbox(
+            "🏆 Mostrar ranking de lojas", value=False, key="ranking_lojas"
         )
+        if mostrar_ranking:
+            st.markdown("### 🏆 Ranking de Lojas")
+            _mes_atual = pd.Timestamp.today().month
+            _ranking_rows_l = []
+
+            for _lnome in sorted(_ml["NOME"].dropna().unique()):
+                _lml_r = _ml[_ml["NOME"] == _lnome]
+                _ln_r  = len(_lml_r)
+                if _ln_r == 0:
+                    continue
+                _lb_r  = 100 / _ln_r
+                _lpq1r = _lpq2r = _lpq3r = _lpq4r = 0.0
+
+                for _, _lr in _lml_r.iterrows():
+                    _lrp   = _lr["PRODUTO"]
+                    _lrmq1 = _lr["JAN"] + _lr["FEV"] + _lr["MAR"]
+                    _lrmq2 = _lr["ABR"] + _lr["MAI"] + _lr["JUN"]
+                    _lrmq3 = _lr["JUL"] + _lr["AGO"] + _lr["SET"]
+                    _lrmq4 = _lr["OUT"] + _lr["NOV"] + _lr["DEZ"]
+                    _lrrq1 = sum(buscar_realizado_loja(_lnome, _lrp, m) for m in [1, 2, 3])
+                    _lrrq2 = sum(buscar_realizado_loja(_lnome, _lrp, m) for m in [4, 5, 6])
+                    _lrrq3 = sum(buscar_realizado_loja(_lnome, _lrp, m) for m in [7, 8, 9])
+                    _lrrq4 = sum(buscar_realizado_loja(_lnome, _lrp, m) for m in [10, 11, 12])
+
+                    def _lrs(real, meta, base):
+                        if pd.isna(real) or pd.isna(meta): return 0.0
+                        if meta <= 0 or real < meta: return 0.0
+                        return base + base * min((real - meta) / meta, 1.0) * 0.20
+
+                    _lpq1r += _lrs(_lrrq1, _lrmq1, _lb_r)
+                    _lpq2r += _lrs(_lrrq2, _lrmq2, _lb_r)
+                    _lpq3r += _lrs(_lrrq3, _lrmq3, _lb_r)
+                    _lpq4r += _lrs(_lrrq4, _lrmq4, _lb_r)
+
+                _lq1p = round(_lpq1r, 1)
+                _lq2p = round(_lpq2r, 1)
+                _lq3p = round(_lpq3r, 1)
+                _lq4p = round(_lpq4r, 1)
+
+                _lvs = (
+                    [_lq1p] * int(_mes_atual >= 1)
+                    + [_lq2p] * int(_mes_atual >= 4)
+                    + [_lq3p] * int(_mes_atual >= 7)
+                    + [_lq4p] * int(_mes_atual >= 10)
+                )
+                _lmed = round(sum(_lvs) / len(_lvs), 1) if _lvs else 0
+
+                _ranking_rows_l.append({
+                    "Loja":  _lnome,
+                    "Q1 %":  _lq1p,
+                    "Q2 %":  _lq2p,
+                    "Q3 %":  _lq3p,
+                    "Q4 %":  _lq4p,
+                    "Média": _lmed,
+                })
+
+            if _ranking_rows_l:
+                _df_rk_l = pd.DataFrame(_ranking_rows_l)
+                _rkl_col, _ = st.columns([2, 5])
+                with _rkl_col:
+                    _rk_sort_l = st.selectbox(
+                        "Ordenar por",
+                        ["Média", "Q1 %", "Q2 %", "Q3 %", "Q4 %"],
+                        index=0,
+                        key="rk_sort_loja",
+                    )
+                _df_rk_l = (
+                    _df_rk_l
+                    .sort_values(_rk_sort_l, ascending=False)
+                    .reset_index(drop=True)
+                )
+                _df_rk_l.index += 1
+                _df_rk_l.index.name = "Pos"
+                st.dataframe(
+                    _df_rk_l,
+                    use_container_width=True,
+                    hide_index=False,
+                    column_config={
+                        "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%.1f%%"),
+                        "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%.1f%%"),
+                        "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%.1f%%"),
+                        "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%.1f%%"),
+                        "Média": st.column_config.NumberColumn("Média", width="small", format="%.1f%%"),
+                    },
+                )
+            else:
+                st.info("Nenhuma loja encontrada para os filtros selecionados.")
 
     else:
 
-        status_consultor = "INATIVO"
+        # ── MODO CONSULTOR ─────────────────────────────────────────────────────
 
-        filial_consultor = "-"
-        regiao_consultor = "-"
+        lista_consultores = sorted(
+            matriz["CONSULTOR"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
 
-        # =====================================================
-        # HEADER EXECUTIVO
-        # =====================================================
-        st.markdown("---")
+        if not lista_consultores:
+            st.warning(
+                "Nenhum consultor ativo encontrado para os filtros selecionados."
+            )
+            st.stop()
 
-        c1, c2, c3, c4 = st.columns(4)
+        # Pré-seleciona usando o nome BI (que é como aparece na lista)
+        default_idx = 0
+        if vendedor_bi != "Todos" and vendedor_bi in lista_consultores:
+            default_idx = lista_consultores.index(vendedor_bi)
 
-        # =====================================================
-        # CARD CONSULTOR
-        # =====================================================
-        with c1:
+        consultor_matriz = st.selectbox(
+            "Consultor",
+            lista_consultores,
+            index=default_idx
+        )
 
-            st.markdown(f"""
-            <div style='
-                background:#fafafa;
-                border:1px solid #e5e7eb;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-            '>
+        matriz_consultor = matriz[
+            matriz["CONSULTOR"] == consultor_matriz
+        ].copy()
 
-                <div style='
-                    font-size:22px;
-                    font-weight:700;
-                    margin-bottom:12px;
-                '>
-                    {consultor_matriz}
-                </div>
+        # =========================
+        # ACUMULADORES DE PONTUAÇÃO
+        # =========================
 
-                <div style='font-size:14px;'>
-                    <b>Filial:</b> {filial_consultor}
-                </div>
+        total_p_q1 = 0
+        total_p_q2 = 0
+        total_p_q3 = 0
+        total_p_q4 = 0
 
-                <div style='font-size:14px; margin-top:4px;'>
-                    <b>Região:</b> {regiao_consultor}
-                </div>
+        real_q1_total = 0
+        real_q2_total = 0
+        real_q3_total = 0
+        real_q4_total = 0
 
-            </div>
-            """, unsafe_allow_html=True)
+        meta_q1_total = 0
+        meta_q2_total = 0
+        meta_q3_total = 0
+        meta_q4_total = 0
 
-        # =====================================================
-        # CARD PONTUAÇÃO
-        # =====================================================
-        with c2:
+        n_produtos = len(matriz_consultor)
+        _base_pct  = (100 / n_produtos) if n_produtos > 0 else 0  # % base por produto
 
-            st.markdown(f"""
-            <div style='
-                background:#fafafa;
-                border:1px solid #e5e7eb;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-                text-align:center;
-            '>
+        # Inicializado aqui para evitar NameError no bloco else
+        # (o valor correto é recalculado após o loop de produtos)
+        media_pontuacao = 0
 
-                <div style='
-                    font-size:14px;
-                    color:#666;
-                '>
-                    Pontuação Final
-                </div>
+        # =========================
+        # STATUS CONSULTOR
+        # =========================
+        if len(matriz_consultor) > 0:
 
-                <div style='font-size:34px;font-weight:700;margin-top:12px;'>
-                    {media_pontuacao:.1f}
-                </div>
+            status_consultor = "ATIVO"
 
-            </div>
-            """, unsafe_allow_html=True)
-
-        # =====================================================
-        # CARD ELEGIBILIDADE
-        # =====================================================
-        with c3:
-
-            st.markdown("""
-            <div style='
-                background:#E3F2FD;
-                border:1px solid #BBDEFB;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-                text-align:center;
-            '>
-
-                <div style='
-                    font-size:14px;
-                    color:#666;
-                '>
-                    Elegibilidade
-                </div>
-
-                <div style='
-                    font-size:30px;
-                    font-weight:700;
-                    margin-top:12px;
-                '>
-                    SIM
-                </div>
-
-            </div>
-            """, unsafe_allow_html=True)
-
-        # =====================================================
-        # CARD STATUS
-        # =====================================================
-        with c4:
-
-            cor_status = (
-                "#2E7D32"
-                if status_consultor == "ATIVO"
-                else "#C62828"
+            filial_consultor = (
+                matriz_consultor["Filial"]
+                .dropna()
+                .iloc[0]
+                if matriz_consultor["Filial"].dropna().shape[0] > 0
+                else "-"
             )
 
-            st.markdown(f"""
-            <div style='
-                background:#fafafa;
-                border:1px solid #e5e7eb;
-                border-radius:12px;
-                padding:18px;
-                height:120px;
-                text-align:center;
-            '>
+            regiao_consultor = (
+                matriz_consultor["Região"]
+                .dropna()
+                .iloc[0]
+                if matriz_consultor["Região"].dropna().shape[0] > 0
+                else "-"
+            )
 
+        else:
+
+            status_consultor = "INATIVO"
+
+            filial_consultor = "-"
+            regiao_consultor = "-"
+
+            # =====================================================
+            # HEADER EXECUTIVO
+            # =====================================================
+            st.markdown("---")
+
+            c1, c2, c3, c4 = st.columns(4)
+
+            # =====================================================
+            # CARD CONSULTOR
+            # =====================================================
+            with c1:
+
+                st.markdown(f"""
                 <div style='
-                    font-size:14px;
-                    color:#666;
+                    background:#fafafa;
+                    border:1px solid #e5e7eb;
+                    border-radius:12px;
+                    padding:18px;
+                    height:120px;
                 '>
-                    Status Consultor
-                </div>
 
+                    <div style='
+                        font-size:22px;
+                        font-weight:700;
+                        margin-bottom:12px;
+                    '>
+                        {consultor_matriz}
+                    </div>
+
+                    <div style='font-size:14px;'>
+                        <b>Filial:</b> {filial_consultor}
+                    </div>
+
+                    <div style='font-size:14px; margin-top:4px;'>
+                        <b>Região:</b> {regiao_consultor}
+                    </div>
+
+                </div>
+                """, unsafe_allow_html=True)
+
+            # =====================================================
+            # CARD PONTUAÇÃO
+            # =====================================================
+            with c2:
+
+                st.markdown(f"""
                 <div style='
-                    font-size:28px;
-                    font-weight:700;
-                    color:{cor_status};
-                    margin-top:12px;
+                    background:#fafafa;
+                    border:1px solid #e5e7eb;
+                    border-radius:12px;
+                    padding:18px;
+                    height:120px;
+                    text-align:center;
                 '>
-                    {status_consultor}
+
+                    <div style='
+                        font-size:14px;
+                        color:#666;
+                    '>
+                        Pontuação Final
+                    </div>
+
+                    <div style='font-size:34px;font-weight:700;margin-top:12px;'>
+                        {media_pontuacao:.1f}
+                    </div>
+
                 </div>
+                """, unsafe_allow_html=True)
 
-            </div>
-            """, unsafe_allow_html=True)
+            # =====================================================
+            # CARD ELEGIBILIDADE
+            # =====================================================
+            with c3:
 
-        st.markdown("---")
+                st.markdown("""
+                <div style='
+                    background:#E3F2FD;
+                    border:1px solid #BBDEFB;
+                    border-radius:12px;
+                    padding:18px;
+                    height:120px;
+                    text-align:center;
+                '>
 
-    # =====================================================
-    # RESUMO TRIMESTRAL — posição fixada aqui na UI,
-    # métricas preenchidas após o loop de produtos
-    # =====================================================
-    col_q1, col_q2, col_q3, col_q4, col_qf = st.columns(5)
+                    <div style='
+                        font-size:14px;
+                        color:#666;
+                    '>
+                        Elegibilidade
+                    </div>
 
-    # =========================
-    # FUNÇÃO REALIZADO
-    # =========================
-    def buscar_realizado(
-        consultor,
-        produto,
-        mes
-    ):
+                    <div style='
+                        font-size:30px;
+                        font-weight:700;
+                        margin-top:12px;
+                    '>
+                        SIM
+                    </div>
 
-        filtro = realizado[
-            (realizado["CONSULTOR"] == consultor)
-            &
-            (realizado["PRODUTO"] == produto)
-            &
-            (realizado["MES"] == mes)
-        ]
+                </div>
+                """, unsafe_allow_html=True)
 
-        if len(filtro) == 0:
-            return 0
+            # =====================================================
+            # CARD STATUS
+            # =====================================================
+            with c4:
 
-        return filtro["REALIZADO"].sum()
-
-
-
-    # =====================================================
-    # LOOP PRODUTOS
-    # =====================================================
-    pontuacao_produtos = []
-    for _, row in matriz_consultor.iterrows():
-
-        # =========================
-        # PERCENTUAL POR TRIMESTRE
-        # =========================
-
-        produto = row["PRODUTO"]
-
-        # =================================================
-        # VALORES
-        # =================================================
-        jan = row["JAN"]
-        fev = row["FEV"]
-        mar = row["MAR"]
-        abr = row["ABR"]
-        mai = row["MAI"]
-        jun = row["JUN"]
-        jul = row["JUL"]
-        ago = row["AGO"]
-        setm = row["SET"]
-        out = row["OUT"]
-        nov = row["NOV"]
-        dez = row["DEZ"]
-
-        total_meta = row["TOTAL"]
-
-        # =================================================
-        # REALIZADO
-        # =================================================
-        consultor = row["CONSULTOR"]
-
-        r_jan = buscar_realizado(
-            consultor,
-            produto,
-            1
-        )
-
-        r_fev = buscar_realizado(
-            consultor,
-            produto,
-            2
-        )
-
-        r_mar = buscar_realizado(
-            consultor,
-            produto,
-            3
-        )
-
-        r_abr = buscar_realizado(
-            consultor,
-            produto,
-            4
-        )
-
-        r_mai = buscar_realizado(
-            consultor,
-            produto,
-            5
-        )
-
-        r_jun = buscar_realizado(
-            consultor,
-            produto,
-            6
-        )
-
-        r_jul = buscar_realizado(
-            consultor,
-            produto,
-            7
-        )
-
-        r_ago = buscar_realizado(
-            consultor,
-            produto,
-            8
-        )
-
-        r_set = buscar_realizado(
-            consultor,
-            produto,
-            9
-        )
-
-        r_out = buscar_realizado(
-            consultor,
-            produto,
-            10
-        )
-
-        r_nov = buscar_realizado(
-            consultor,
-            produto,
-            11
-        )
-
-        r_dez = buscar_realizado(
-            consultor,
-            produto,
-            12
-        )
-
-        # =================================================
-        # TRIMESTRES
-        # =================================================
-        meta_q1 = jan + fev + mar
-        meta_q2 = abr + mai + jun
-        meta_q3 = jul + ago + setm
-        meta_q4 = out + nov + dez
-
-        real_q1 = r_jan + r_fev + r_mar
-        real_q2 = r_abr + r_mai + r_jun
-        real_q3 = r_jul + r_ago + r_set
-        real_q4 = r_out + r_nov + r_dez
-
-        real_q1_total += real_q1
-        real_q2_total += real_q2
-        real_q3_total += real_q3
-        real_q4_total += real_q4
-
-        meta_q1_total += meta_q1
-        meta_q2_total += meta_q2
-        meta_q3_total += meta_q3
-        meta_q4_total += meta_q4
-
-        # =================================================
-        # DIFERENÇAS
-        # =================================================
-        dif_total = (
-            real_q1
-            + real_q2
-            + real_q3
-            + real_q4
-        ) - total_meta
-
-        # =================================================
-        # EXPANDER
-        # =================================================
-        with st.expander(f"{produto}"):
-
-            st.markdown(f"""
-            ### {produto}
-            """)
-
-            # Formatting helpers para este produto
-            is_monetary = produto in ["IMPLEMENTO", "USADOS"]
-
-            if is_monetary:
-                fmt_fn = lambda x: (
-                    "R$ " + f"{round(x):,}".replace(",", ".")
-                    if pd.notna(x) else ""
+                cor_status = (
+                    "#2E7D32"
+                    if status_consultor == "ATIVO"
+                    else "#C62828"
                 )
-            else:
-                fmt_fn = lambda x: f"{x:.0f}" if pd.notna(x) else ""
 
-            def highlight_tri(col):
-                if col.name in ["1 TRI", "2 TRI", "3 TRI", "4 TRI"]:
-                    return [
-                        "background-color: #d6d6d6; color: black; font-weight: bold"
-                    ] * len(col)
-                return [""] * len(col)
+                st.markdown(f"""
+                <div style='
+                    background:#fafafa;
+                    border:1px solid #e5e7eb;
+                    border-radius:12px;
+                    padding:18px;
+                    height:120px;
+                    text-align:center;
+                '>
 
-            _cols17 = [
-                "Jan", "Fev", "Mar", "1 TRI",
-                "Abr", "Mai", "Jun", "2 TRI",
-                "Jul", "Ago", "Set", "3 TRI",
-                "Out", "Nov", "Dez", "4 TRI", "TOTAL"
+                    <div style='
+                        font-size:14px;
+                        color:#666;
+                    '>
+                        Status Consultor
+                    </div>
+
+                    <div style='
+                        font-size:28px;
+                        font-weight:700;
+                        color:{cor_status};
+                        margin-top:12px;
+                    '>
+                        {status_consultor}
+                    </div>
+
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("---")
+
+        # =====================================================
+        # RESUMO TRIMESTRAL — posição fixada aqui na UI,
+        # métricas preenchidas após o loop de produtos
+        # =====================================================
+        col_q1, col_q2, col_q3, col_q4, col_qf = st.columns(5)
+
+        # =========================
+        # FUNÇÃO REALIZADO
+        # =========================
+        def buscar_realizado(
+            consultor,
+            produto,
+            mes
+        ):
+
+            filtro = realizado[
+                (realizado["CONSULTOR"] == consultor)
+                &
+                (realizado["PRODUTO"] == produto)
+                &
+                (realizado["MES"] == mes)
             ]
-            col_cfg_17 = {
-                c: st.column_config.TextColumn(c, width="small")
-                for c in _cols17
-            }
 
-            # =============================================
-            # META
-            # =============================================
-            st.markdown("#### Meta")
+            if len(filtro) == 0:
+                return 0
 
-            meta_df = pd.DataFrame({
-                "Jan": [jan],
-                "Fev": [fev],
-                "Mar": [mar],
-                "1 TRI": [meta_q1],
-                "Abr": [abr],
-                "Mai": [mai],
-                "Jun": [jun],
-                "2 TRI": [meta_q2],
-                "Jul": [jul],
-                "Ago": [ago],
-                "Set": [setm],
-                "3 TRI": [meta_q3],
-                "Out": [out],
-                "Nov": [nov],
-                "Dez": [dez],
-                "4 TRI": [meta_q4],
-                "TOTAL": [total_meta]
-            })
+            return filtro["REALIZADO"].sum()
 
-            st.dataframe(
-                meta_df.style
-                .format(fmt_fn)
-                .apply(highlight_tri, axis=0),
-                use_container_width=True,
-                hide_index=True,
-                column_config=col_cfg_17
-            )
 
-            # =============================================
+
+        # =====================================================
+        # LOOP PRODUTOS
+        # =====================================================
+        pontuacao_produtos = []
+        for _, row in matriz_consultor.iterrows():
+
+            # =========================
+            # PERCENTUAL POR TRIMESTRE
+            # =========================
+
+            produto = row["PRODUTO"]
+
+            # =================================================
+            # VALORES
+            # =================================================
+            jan = row["JAN"]
+            fev = row["FEV"]
+            mar = row["MAR"]
+            abr = row["ABR"]
+            mai = row["MAI"]
+            jun = row["JUN"]
+            jul = row["JUL"]
+            ago = row["AGO"]
+            setm = row["SET"]
+            out = row["OUT"]
+            nov = row["NOV"]
+            dez = row["DEZ"]
+
+            total_meta = row["TOTAL"]
+
+            # =================================================
             # REALIZADO
-            # =============================================
-            st.markdown("#### Realizado")
+            # =================================================
+            consultor = row["CONSULTOR"]
 
-            realizado_df = pd.DataFrame({
-                "Jan": [r_jan],
-                "Fev": [r_fev],
-                "Mar": [r_mar],
-                "1 TRI": [real_q1],
-                "Abr": [r_abr],
-                "Mai": [r_mai],
-                "Jun": [r_jun],
-                "2 TRI": [real_q2],
-                "Jul": [r_jul],
-                "Ago": [r_ago],
-                "Set": [r_set],
-                "3 TRI": [real_q3],
-                "Out": [r_out],
-                "Nov": [r_nov],
-                "Dez": [r_dez],
-                "4 TRI": [real_q4],
-                "TOTAL": [
-                    real_q1
-                    + real_q2
-                    + real_q3
-                    + real_q4
+            r_jan = buscar_realizado(
+                consultor,
+                produto,
+                1
+            )
+
+            r_fev = buscar_realizado(
+                consultor,
+                produto,
+                2
+            )
+
+            r_mar = buscar_realizado(
+                consultor,
+                produto,
+                3
+            )
+
+            r_abr = buscar_realizado(
+                consultor,
+                produto,
+                4
+            )
+
+            r_mai = buscar_realizado(
+                consultor,
+                produto,
+                5
+            )
+
+            r_jun = buscar_realizado(
+                consultor,
+                produto,
+                6
+            )
+
+            r_jul = buscar_realizado(
+                consultor,
+                produto,
+                7
+            )
+
+            r_ago = buscar_realizado(
+                consultor,
+                produto,
+                8
+            )
+
+            r_set = buscar_realizado(
+                consultor,
+                produto,
+                9
+            )
+
+            r_out = buscar_realizado(
+                consultor,
+                produto,
+                10
+            )
+
+            r_nov = buscar_realizado(
+                consultor,
+                produto,
+                11
+            )
+
+            r_dez = buscar_realizado(
+                consultor,
+                produto,
+                12
+            )
+
+            # =================================================
+            # TRIMESTRES
+            # =================================================
+            meta_q1 = jan + fev + mar
+            meta_q2 = abr + mai + jun
+            meta_q3 = jul + ago + setm
+            meta_q4 = out + nov + dez
+
+            real_q1 = r_jan + r_fev + r_mar
+            real_q2 = r_abr + r_mai + r_jun
+            real_q3 = r_jul + r_ago + r_set
+            real_q4 = r_out + r_nov + r_dez
+
+            real_q1_total += real_q1
+            real_q2_total += real_q2
+            real_q3_total += real_q3
+            real_q4_total += real_q4
+
+            meta_q1_total += meta_q1
+            meta_q2_total += meta_q2
+            meta_q3_total += meta_q3
+            meta_q4_total += meta_q4
+
+            # =================================================
+            # DIFERENÇAS
+            # =================================================
+            dif_total = (
+                real_q1
+                + real_q2
+                + real_q3
+                + real_q4
+            ) - total_meta
+
+            # =================================================
+            # EXPANDER
+            # =================================================
+            with st.expander(f"{produto}"):
+
+                st.markdown(f"""
+                ### {produto}
+                """)
+
+                # Formatting helpers para este produto
+                is_monetary = produto in ["IMPLEMENTO", "USADOS"]
+
+                if is_monetary:
+                    fmt_fn = lambda x: (
+                        "R$ " + f"{round(x):,}".replace(",", ".")
+                        if pd.notna(x) else ""
+                    )
+                else:
+                    fmt_fn = lambda x: f"{x:.0f}" if pd.notna(x) else ""
+
+                def highlight_tri(col):
+                    if col.name in ["1 TRI", "2 TRI", "3 TRI", "4 TRI"]:
+                        return [
+                            "background-color: #d6d6d6; color: black; font-weight: bold"
+                        ] * len(col)
+                    return [""] * len(col)
+
+                _cols17 = [
+                    "Jan", "Fev", "Mar", "1 TRI",
+                    "Abr", "Mai", "Jun", "2 TRI",
+                    "Jul", "Ago", "Set", "3 TRI",
+                    "Out", "Nov", "Dez", "4 TRI", "TOTAL"
                 ]
-            })
+                col_cfg_17 = {
+                    c: st.column_config.TextColumn(c, width="small")
+                    for c in _cols17
+                }
 
-            st.dataframe(
-                realizado_df.style
-                .format(fmt_fn)
-                .apply(highlight_tri, axis=0),
-                use_container_width=True,
-                hide_index=True,
-                column_config=col_cfg_17
-            )
+                # =============================================
+                # META
+                # =============================================
+                st.markdown("#### Meta")
 
-            # =============================================
-            # DIFERENÇA
-            # =============================================
-            st.markdown("#### Diferença")
+                meta_df = pd.DataFrame({
+                    "Jan": [jan],
+                    "Fev": [fev],
+                    "Mar": [mar],
+                    "1 TRI": [meta_q1],
+                    "Abr": [abr],
+                    "Mai": [mai],
+                    "Jun": [jun],
+                    "2 TRI": [meta_q2],
+                    "Jul": [jul],
+                    "Ago": [ago],
+                    "Set": [setm],
+                    "3 TRI": [meta_q3],
+                    "Out": [out],
+                    "Nov": [nov],
+                    "Dez": [dez],
+                    "4 TRI": [meta_q4],
+                    "TOTAL": [total_meta]
+                })
 
-            # DIFERENÇA (corrigido)
-            diferenca = realizado_df.iloc[0].subtract(meta_df.iloc[0], fill_value=0)
+                st.dataframe(
+                    meta_df.style
+                    .format(fmt_fn)
+                    .apply(highlight_tri, axis=0),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=col_cfg_17
+                )
 
-            diferenca_df = diferenca.to_frame().T.reset_index(drop=True)
+                # =============================================
+                # REALIZADO
+                # =============================================
+                st.markdown("#### Realizado")
 
-            st.dataframe(
-                diferenca_df.style
-                .format(fmt_fn)
-                .apply(highlight_tri, axis=0),
-                use_container_width=True,
-                hide_index=True,
-                column_config=col_cfg_17
-            )
+                realizado_df = pd.DataFrame({
+                    "Jan": [r_jan],
+                    "Fev": [r_fev],
+                    "Mar": [r_mar],
+                    "1 TRI": [real_q1],
+                    "Abr": [r_abr],
+                    "Mai": [r_mai],
+                    "Jun": [r_jun],
+                    "2 TRI": [real_q2],
+                    "Jul": [r_jul],
+                    "Ago": [r_ago],
+                    "Set": [r_set],
+                    "3 TRI": [real_q3],
+                    "Out": [r_out],
+                    "Nov": [r_nov],
+                    "Dez": [r_dez],
+                    "4 TRI": [real_q4],
+                    "TOTAL": [
+                        real_q1
+                        + real_q2
+                        + real_q3
+                        + real_q4
+                    ]
+                })
 
-            # =========================
-            # FUNÇÃO DE PONTUAÇÃO
-            # =========================
-            def calc_ponto(real, meta):
-                real = 0 if pd.isna(real) else real
-                meta = 0 if pd.isna(meta) else meta
-                if meta <= 0 or real < meta:
-                    return 0.0
-                # Bônus proporcional ao excesso acima da meta, até dobrar (máx +20%)
-                excess_ratio = min((real - meta) / meta, 1.0)
-                return _base_pct + _base_pct * excess_ratio * 0.20
+                st.dataframe(
+                    realizado_df.style
+                    .format(fmt_fn)
+                    .apply(highlight_tri, axis=0),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=col_cfg_17
+                )
 
-            # =========================
-            # PONTUAÇÃO POR TRIMESTRE
-            # =========================
-            p_q1 = calc_ponto(real_q1, meta_q1)
-            p_q2 = calc_ponto(real_q2, meta_q2)
-            p_q3 = calc_ponto(real_q3, meta_q3)
-            p_q4 = calc_ponto(real_q4, meta_q4)
+                # =============================================
+                # DIFERENÇA
+                # =============================================
+                st.markdown("#### Diferença")
 
-            total_p_q1 += p_q1
-            total_p_q2 += p_q2
-            total_p_q3 += p_q3
-            total_p_q4 += p_q4
+                # DIFERENÇA (corrigido)
+                diferenca = realizado_df.iloc[0].subtract(meta_df.iloc[0], fill_value=0)
 
-            pontuacao_total_produto = p_q1 + p_q2 + p_q3 + p_q4
+                diferenca_df = diferenca.to_frame().T.reset_index(drop=True)
 
-            pontuacao_produtos.append({
-                "produto": produto,
-                "pontuacao": pontuacao_total_produto
-            })
+                st.dataframe(
+                    diferenca_df.style
+                    .format(fmt_fn)
+                    .apply(highlight_tri, axis=0),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=col_cfg_17
+                )
 
-            pontos_total = p_q1 + p_q2 + p_q3 + p_q4
-
-            st.markdown("### Pontuação por Trimestre")
-
-            # Proporção 4:4:4:4:1 = 17 partes, igual às 17 colunas
-            # das tabelas acima — Q1 alinha com Jan+Fev+Mar+1TRI
-            _sc = st.columns([4, 4, 4, 4, 1])
-            for _col, _lbl, _val in zip(
-                _sc,
-                ["Q1", "Q2", "Q3", "Q4", "TOTAL"],
-                [p_q1, p_q2, p_q3, p_q4, pontos_total]
-            ):
-                with _col:
-                    st.metric(_lbl, f"{_val:.1f}%")
-          
-    # =====================================================
-    # PONTUAÇÃO PONDERADA POR TRIMESTRE (calculada pós-loop)
-    # =====================================================
-    # Máximo por trimestre = n_produtos × 10 pts
-    # q_final = (pontos_obtidos / máximo) × 100
-    # total_p_qN já acumula % direto (soma das pontuações por produto no trimestre)
-    q1_final = total_p_q1
-    q2_final = total_p_q2
-    q3_final = total_p_q3
-    q4_final = total_p_q4
-
-    with col_q1:
-        st.metric("Q1", f"{q1_final:.1f}%")
-
-    with col_q2:
-        st.metric("Q2", f"{q2_final:.1f}%")
-
-    with col_q3:
-        st.metric("Q3", f"{q3_final:.1f}%")
-
-    with col_q4:
-        st.metric("Q4", f"{q4_final:.1f}%")
-
-    with col_qf:
-        st.metric("FINAL", "0")
-
-    # =====================================================
-    # RANKING DE CONSULTORES
-    # =====================================================
-    st.markdown("---")
-    mostrar_ranking = st.checkbox(
-        "🏆 Mostrar ranking de consultores", value=False
-    )
-
-    if mostrar_ranking:
-        st.markdown("### 🏆 Ranking de Consultores")
-
-        # Trimestres que já iniciaram (para calcular a média)
-        _mes_atual = pd.Timestamp.today().month
-
-        _ranking_rows = []
-        for _rk_cons in sorted(matriz["CONSULTOR"].dropna().unique()):
-            _rk_mc = matriz[matriz["CONSULTOR"] == _rk_cons]
-            _rk_n  = len(_rk_mc)
-            if _rk_n == 0:
-                continue
-
-            _rk_base = (100 / _rk_n) if _rk_n > 0 else 0
-            _rk_pq1 = _rk_pq2 = _rk_pq3 = _rk_pq4 = 0.0
-
-            for _, _rk_row in _rk_mc.iterrows():
-                _rk_prod = _rk_row["PRODUTO"]
-                _rk_mq1  = _rk_row["JAN"] + _rk_row["FEV"] + _rk_row["MAR"]
-                _rk_mq2  = _rk_row["ABR"] + _rk_row["MAI"] + _rk_row["JUN"]
-                _rk_mq3  = _rk_row["JUL"] + _rk_row["AGO"] + _rk_row["SET"]
-                _rk_mq4  = _rk_row["OUT"] + _rk_row["NOV"] + _rk_row["DEZ"]
-                _rk_rq1  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [1, 2, 3])
-                _rk_rq2  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [4, 5, 6])
-                _rk_rq3  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [7, 8, 9])
-                _rk_rq4  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [10, 11, 12])
-
-                def _rk_score(real, meta, base):
-                    if pd.isna(real) or pd.isna(meta):
-                        return 0.0
+                # =========================
+                # FUNÇÃO DE PONTUAÇÃO
+                # =========================
+                def calc_ponto(real, meta):
+                    real = 0 if pd.isna(real) else real
+                    meta = 0 if pd.isna(meta) else meta
                     if meta <= 0 or real < meta:
                         return 0.0
-                    return base + base * min((real - meta) / meta, 1.0) * 0.20
+                    # Bônus proporcional ao excesso acima da meta, até dobrar (máx +20%)
+                    excess_ratio = min((real - meta) / meta, 1.0)
+                    return _base_pct + _base_pct * excess_ratio * 0.20
 
-                _rk_pq1 += _rk_score(_rk_rq1, _rk_mq1, _rk_base)
-                _rk_pq2 += _rk_score(_rk_rq2, _rk_mq2, _rk_base)
-                _rk_pq3 += _rk_score(_rk_rq3, _rk_mq3, _rk_base)
-                _rk_pq4 += _rk_score(_rk_rq4, _rk_mq4, _rk_base)
+                # =========================
+                # PONTUAÇÃO POR TRIMESTRE
+                # =========================
+                p_q1 = calc_ponto(real_q1, meta_q1)
+                p_q2 = calc_ponto(real_q2, meta_q2)
+                p_q3 = calc_ponto(real_q3, meta_q3)
+                p_q4 = calc_ponto(real_q4, meta_q4)
 
-            _rk_filial = (
-                _rk_mc["Filial"].dropna().iloc[0]
-                if not _rk_mc["Filial"].dropna().empty else "-"
-            )
+                total_p_q1 += p_q1
+                total_p_q2 += p_q2
+                total_p_q3 += p_q3
+                total_p_q4 += p_q4
 
-            _rk_q1pct = round(_rk_pq1, 1)
-            _rk_q2pct = round(_rk_pq2, 1)
-            _rk_q3pct = round(_rk_pq3, 1)
-            _rk_q4pct = round(_rk_pq4, 1)
+                pontuacao_total_produto = p_q1 + p_q2 + p_q3 + p_q4
 
-            # Média apenas dos trimestres já iniciados
-            _rk_vals = (
-                [_rk_q1pct] * int(_mes_atual >= 1)
-                + [_rk_q2pct] * int(_mes_atual >= 4)
-                + [_rk_q3pct] * int(_mes_atual >= 7)
-                + [_rk_q4pct] * int(_mes_atual >= 10)
-            )
-            _rk_media = round(sum(_rk_vals) / len(_rk_vals), 1) if _rk_vals else 0
+                pontuacao_produtos.append({
+                    "produto": produto,
+                    "pontuacao": pontuacao_total_produto
+                })
 
-            _ranking_rows.append({
-                "Consultor": _rk_cons,
-                "Filial":    _rk_filial,
-                "Q1 %":      _rk_q1pct,
-                "Q2 %":      _rk_q2pct,
-                "Q3 %":      _rk_q3pct,
-                "Q4 %":      _rk_q4pct,
-                "Média":     _rk_media,
-            })
+                pontos_total = p_q1 + p_q2 + p_q3 + p_q4
 
-        if _ranking_rows:
-            _df_rk = pd.DataFrame(_ranking_rows)
+                st.markdown("### Pontuação por Trimestre")
 
-            # Ordenação por trimestre (dropdown compacto)
-            _rk_col, _ = st.columns([2, 5])
-            with _rk_col:
-                _rk_sort = st.selectbox(
-                    "Ordenar por",
-                    ["Média", "Q1 %", "Q2 %", "Q3 %", "Q4 %"],
-                    index=0,
-                    key="rk_sort_col",
+                # Proporção 4:4:4:4:1 = 17 partes, igual às 17 colunas
+                # das tabelas acima — Q1 alinha com Jan+Fev+Mar+1TRI
+                _sc = st.columns([4, 4, 4, 4, 1])
+                for _col, _lbl, _val in zip(
+                    _sc,
+                    ["Q1", "Q2", "Q3", "Q4", "TOTAL"],
+                    [p_q1, p_q2, p_q3, p_q4, pontos_total]
+                ):
+                    with _col:
+                        st.metric(_lbl, f"{_val:.1f}%")
+          
+        # =====================================================
+        # PONTUAÇÃO PONDERADA POR TRIMESTRE (calculada pós-loop)
+        # =====================================================
+        # Máximo por trimestre = n_produtos × 10 pts
+        # q_final = (pontos_obtidos / máximo) × 100
+        # total_p_qN já acumula % direto (soma das pontuações por produto no trimestre)
+        q1_final = total_p_q1
+        q2_final = total_p_q2
+        q3_final = total_p_q3
+        q4_final = total_p_q4
+
+        with col_q1:
+            st.metric("Q1", f"{q1_final:.1f}%")
+
+        with col_q2:
+            st.metric("Q2", f"{q2_final:.1f}%")
+
+        with col_q3:
+            st.metric("Q3", f"{q3_final:.1f}%")
+
+        with col_q4:
+            st.metric("Q4", f"{q4_final:.1f}%")
+
+        with col_qf:
+            st.metric("FINAL", "0")
+
+        # =====================================================
+        # RANKING DE CONSULTORES
+        # =====================================================
+        st.markdown("---")
+        mostrar_ranking = st.checkbox(
+            "🏆 Mostrar ranking de consultores", value=False
+        )
+
+        if mostrar_ranking:
+            st.markdown("### 🏆 Ranking de Consultores")
+
+            # Trimestres que já iniciaram (para calcular a média)
+            _mes_atual = pd.Timestamp.today().month
+
+            _ranking_rows = []
+            for _rk_cons in sorted(matriz["CONSULTOR"].dropna().unique()):
+                _rk_mc = matriz[matriz["CONSULTOR"] == _rk_cons]
+                _rk_n  = len(_rk_mc)
+                if _rk_n == 0:
+                    continue
+
+                _rk_base = (100 / _rk_n) if _rk_n > 0 else 0
+                _rk_pq1 = _rk_pq2 = _rk_pq3 = _rk_pq4 = 0.0
+
+                for _, _rk_row in _rk_mc.iterrows():
+                    _rk_prod = _rk_row["PRODUTO"]
+                    _rk_mq1  = _rk_row["JAN"] + _rk_row["FEV"] + _rk_row["MAR"]
+                    _rk_mq2  = _rk_row["ABR"] + _rk_row["MAI"] + _rk_row["JUN"]
+                    _rk_mq3  = _rk_row["JUL"] + _rk_row["AGO"] + _rk_row["SET"]
+                    _rk_mq4  = _rk_row["OUT"] + _rk_row["NOV"] + _rk_row["DEZ"]
+                    _rk_rq1  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [1, 2, 3])
+                    _rk_rq2  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [4, 5, 6])
+                    _rk_rq3  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [7, 8, 9])
+                    _rk_rq4  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [10, 11, 12])
+
+                    def _rk_score(real, meta, base):
+                        if pd.isna(real) or pd.isna(meta):
+                            return 0.0
+                        if meta <= 0 or real < meta:
+                            return 0.0
+                        return base + base * min((real - meta) / meta, 1.0) * 0.20
+
+                    _rk_pq1 += _rk_score(_rk_rq1, _rk_mq1, _rk_base)
+                    _rk_pq2 += _rk_score(_rk_rq2, _rk_mq2, _rk_base)
+                    _rk_pq3 += _rk_score(_rk_rq3, _rk_mq3, _rk_base)
+                    _rk_pq4 += _rk_score(_rk_rq4, _rk_mq4, _rk_base)
+
+                _rk_filial = (
+                    _rk_mc["Filial"].dropna().iloc[0]
+                    if not _rk_mc["Filial"].dropna().empty else "-"
                 )
 
-            _df_rk = (
-                _df_rk
-                .sort_values(_rk_sort, ascending=False)
-                .reset_index(drop=True)
-            )
-            _df_rk.index += 1
-            _df_rk.index.name = "Pos"
+                _rk_q1pct = round(_rk_pq1, 1)
+                _rk_q2pct = round(_rk_pq2, 1)
+                _rk_q3pct = round(_rk_pq3, 1)
+                _rk_q4pct = round(_rk_pq4, 1)
 
-            st.dataframe(
-                _df_rk,
-                use_container_width=True,
-                hide_index=False,
-                column_config={
-                    "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%.1f%%"),
-                    "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%.1f%%"),
-                    "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%.1f%%"),
-                    "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%.1f%%"),
-                    "Média": st.column_config.NumberColumn("Média", width="small", format="%.1f%%"),
-                },
-            )
-        else:
-            st.info("Nenhum consultor encontrado para os filtros selecionados.")
+                # Média apenas dos trimestres já iniciados
+                _rk_vals = (
+                    [_rk_q1pct] * int(_mes_atual >= 1)
+                    + [_rk_q2pct] * int(_mes_atual >= 4)
+                    + [_rk_q3pct] * int(_mes_atual >= 7)
+                    + [_rk_q4pct] * int(_mes_atual >= 10)
+                )
+                _rk_media = round(sum(_rk_vals) / len(_rk_vals), 1) if _rk_vals else 0
+
+                _ranking_rows.append({
+                    "Consultor": _rk_cons,
+                    "Filial":    _rk_filial,
+                    "Q1 %":      _rk_q1pct,
+                    "Q2 %":      _rk_q2pct,
+                    "Q3 %":      _rk_q3pct,
+                    "Q4 %":      _rk_q4pct,
+                    "Média":     _rk_media,
+                })
+
+            if _ranking_rows:
+                _df_rk = pd.DataFrame(_ranking_rows)
+
+                # Ordenação por trimestre (dropdown compacto)
+                _rk_col, _ = st.columns([2, 5])
+                with _rk_col:
+                    _rk_sort = st.selectbox(
+                        "Ordenar por",
+                        ["Média", "Q1 %", "Q2 %", "Q3 %", "Q4 %"],
+                        index=0,
+                        key="rk_sort_col",
+                    )
+
+                _df_rk = (
+                    _df_rk
+                    .sort_values(_rk_sort, ascending=False)
+                    .reset_index(drop=True)
+                )
+                _df_rk.index += 1
+                _df_rk.index.name = "Pos"
+
+                st.dataframe(
+                    _df_rk,
+                    use_container_width=True,
+                    hide_index=False,
+                    column_config={
+                        "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%.1f%%"),
+                        "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%.1f%%"),
+                        "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%.1f%%"),
+                        "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%.1f%%"),
+                        "Média": st.column_config.NumberColumn("Média", width="small", format="%.1f%%"),
+                    },
+                )
+            else:
+                st.info("Nenhum consultor encontrado para os filtros selecionados.")
 
 # =====================================================
 # MÉDIA FINAL DO CONSULTOR
