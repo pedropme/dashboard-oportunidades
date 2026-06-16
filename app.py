@@ -1516,27 +1516,49 @@ with tab3:
         vendedor_bi = "Todos"
 
     # =====================================================
-    # CONTROLES DE VISÃO E TIPO DE META
+    # CONTROLES DE VISÃO E TIPO DE META (toggles)
     # =====================================================
-    _col_seg, _col_gap, _col_meta = st.columns([3, 1, 5])
+    _tog_col, _ = st.columns([3, 4])
 
-    with _col_seg:
-        _seg_visao = st.radio(
-            "Visão",
-            ["Consultor", "Loja"],
-            horizontal=True,
-            key="seg_visao",
-            label_visibility="collapsed",
-        )
+    with _tog_col:
+        # Toggle 1: Consultor ←→ Loja
+        _ta, _tb, _tc = st.columns([1.6, 0.7, 1])
+        with _ta:
+            st.markdown(
+                "<div style='text-align:right; padding-top:6px;'>Consultor</div>",
+                unsafe_allow_html=True,
+            )
+        with _tb:
+            _loja = st.toggle("", key="seg_loja", label_visibility="collapsed")
+        with _tc:
+            st.markdown(
+                "<div style='padding-top:6px;'>Loja</div>",
+                unsafe_allow_html=True,
+            )
 
-    with _col_meta:
-        _tipo_meta = st.radio(
-            "Tipo de Meta",
-            ["Matriz de Performance", "Orçamento"],
-            horizontal=True,
-            key="tipo_meta",
-            disabled=(_seg_visao == "Consultor"),
-        )
+        _seg_visao = "Loja" if _loja else "Consultor"
+
+        # Toggle 2: Matriz de Performance ←→ Orçamento
+        _td, _te, _tf = st.columns([1.6, 0.7, 1])
+        with _td:
+            st.markdown(
+                "<div style='text-align:right; padding-top:6px;'>"
+                "Matriz de Performance</div>",
+                unsafe_allow_html=True,
+            )
+        with _te:
+            _orcamento = st.toggle(
+                "", key="tipo_meta_toggle",
+                label_visibility="collapsed",
+                disabled=not _loja,
+            )
+        with _tf:
+            st.markdown(
+                "<div style='padding-top:6px;'>Orçamento</div>",
+                unsafe_allow_html=True,
+            )
+
+        _tipo_meta = "Orçamento" if _orcamento else "Matriz de Performance"
 
     st.markdown("---")
 
