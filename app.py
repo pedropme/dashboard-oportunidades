@@ -1518,47 +1518,45 @@ with tab3:
     # =====================================================
     # CONTROLES DE VISÃO E TIPO DE META (toggles)
     # =====================================================
-    _tog_col, _ = st.columns([3, 4])
+    _lbl = "font-size:14px; font-weight:500; margin:0; padding-top:5px;"
 
-    with _tog_col:
-        # Toggle 1: Consultor ←→ Loja
-        _ta, _tb, _tc = st.columns([1.6, 0.7, 1])
-        with _ta:
-            st.markdown(
-                "<div style='text-align:right; padding-top:6px;'>Consultor</div>",
-                unsafe_allow_html=True,
-            )
-        with _tb:
-            _loja = st.toggle("", key="seg_loja", label_visibility="collapsed")
-        with _tc:
-            st.markdown(
-                "<div style='padding-top:6px;'>Loja</div>",
-                unsafe_allow_html=True,
-            )
+    # Toggle 1 — Consultor / Loja
+    _c1, _c2, _c3, _c_sp = st.columns([1.1, 0.5, 0.7, 8], gap="small")
+    with _c1:
+        st.markdown(
+            f"<p style='{_lbl} text-align:right;'>Consultor</p>",
+            unsafe_allow_html=True,
+        )
+    with _c2:
+        _loja = st.toggle("", key="seg_loja", label_visibility="collapsed")
+    with _c3:
+        st.markdown(
+            f"<p style='{_lbl}'>Loja</p>",
+            unsafe_allow_html=True,
+        )
 
-        _seg_visao = "Loja" if _loja else "Consultor"
+    _seg_visao = "Loja" if _loja else "Consultor"
 
-        # Toggle 2: Matriz de Performance ←→ Orçamento
-        _td, _te, _tf = st.columns([1.6, 0.7, 1])
-        with _td:
-            st.markdown(
-                "<div style='text-align:right; padding-top:6px;'>"
-                "Matriz de Performance</div>",
-                unsafe_allow_html=True,
-            )
-        with _te:
-            _orcamento = st.toggle(
-                "", key="tipo_meta_toggle",
-                label_visibility="collapsed",
-                disabled=not _loja,
-            )
-        with _tf:
-            st.markdown(
-                "<div style='padding-top:6px;'>Orçamento</div>",
-                unsafe_allow_html=True,
-            )
+    # Toggle 2 — Matriz de Performance / Orçamento
+    _c4, _c5, _c6, _ = st.columns([1.1, 0.5, 0.7, 8], gap="small")
+    with _c4:
+        st.markdown(
+            f"<p style='{_lbl} text-align:right;'>Matriz de Performance</p>",
+            unsafe_allow_html=True,
+        )
+    with _c5:
+        _orcamento = st.toggle(
+            "", key="tipo_meta_toggle",
+            label_visibility="collapsed",
+            disabled=not _loja,
+        )
+    with _c6:
+        st.markdown(
+            f"<p style='{_lbl}'>Orçamento</p>",
+            unsafe_allow_html=True,
+        )
 
-        _tipo_meta = "Orçamento" if _orcamento else "Matriz de Performance"
+    _tipo_meta = "Orçamento" if _orcamento else "Matriz de Performance"
 
     st.markdown("---")
 
