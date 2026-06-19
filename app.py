@@ -746,6 +746,38 @@ def card(t, v):
     """, unsafe_allow_html=True)
 
 # =========================
+# HELPER: tabela com filtros por coluna (AgGrid)
+# =========================
+def _tabela(df, key, height=None, show_index=False, pct_cols=()):
+    """Exibe DataFrame com filtros Excel-like clicáveis nos cabeçalhos."""
+    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+    _df = df.reset_index() if show_index else df.reset_index(drop=True)
+    gb = GridOptionsBuilder.from_dataframe(_df)
+    gb.configure_default_column(
+        filter=True,
+        sortable=True,
+        resizable=True,
+        suppressMenu=False,
+    )
+    for col in pct_cols:
+        if col in _df.columns:
+            gb.configure_column(
+                col,
+                type=["numericColumn", "numericFilter"],
+                valueFormatter="value != null ? parseFloat(value).toFixed(1) + '%' : ''",
+            )
+    kw = {"height": height} if height else {}
+    AgGrid(
+        _df,
+        gridOptions=gb.build(),
+        update_mode=GridUpdateMode.NO_UPDATE,
+        use_container_width=True,
+        theme="streamlit",
+        key=key,
+        **kw,
+    )
+
+# =========================
 # TAB 1 - VENDEDOR
 # =========================
 with tab1:
@@ -888,12 +920,7 @@ with tab1:
         "Oportunidades Em Aberto": "Em Aberto"
     })
 
-    st.dataframe(
-        tabela_vendedor,
-        use_container_width=True,
-        hide_index=True,
-        height=500
-    )
+    _tabela(tabela_vendedor, key="tv_vendedor", height=500)
 
     # =========================
     # TABELA DESCRITIVO OPORTUNIDADES
@@ -1047,11 +1074,7 @@ with tab1:
         )
     )
 
-    st.dataframe(
-        tabela_opp,
-        use_container_width=True,
-        hide_index=True
-    )
+    _tabela(tabela_opp, key="tv_opp")
 
     # =========================
     # TAB 2 - MAPA MUNICÍPIO
@@ -1288,11 +1311,7 @@ with tab1:
             ascending=False
         )
 
-        st.dataframe(
-            tabela_municipios,
-            use_container_width=True,
-            hide_index=True
-        )
+        _tabela(tabela_municipios, key="tv_municipios")
 
         # =========================
         # DESCRITIVO OPORTUNIDADES
@@ -1429,11 +1448,7 @@ with tab1:
             .sort_values("Data de Criação", ascending=False)
         )
 
-        st.dataframe(
-            tabela_desc_mun,
-            use_container_width=True,
-            hide_index=True
-        )
+        _tabela(tabela_desc_mun, key="tv_desc_mun")
 
 # =========================
 # TAB 3 - MATRIZ
@@ -1861,17 +1876,11 @@ with tab3:
                 )
                 _df_rk_l.index += 1
                 _df_rk_l.index.name = "Pos"
-                st.dataframe(
+                _tabela(
                     _df_rk_l,
-                    use_container_width=True,
-                    hide_index=False,
-                    column_config={
-                        "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%.1f%%"),
-                        "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%.1f%%"),
-                        "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%.1f%%"),
-                        "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%.1f%%"),
-                        "Média": st.column_config.NumberColumn("Média", width="small", format="%.1f%%"),
-                    },
+                    key="tv_rk_loja",
+                    show_index=True,
+                    pct_cols=("Q1 %", "Q2 %", "Q3 %", "Q4 %", "Média"),
                 )
             else:
                 st.info("Nenhuma loja encontrada para os filtros selecionados.")
@@ -2578,17 +2587,11 @@ with tab3:
                 _df_rk.index += 1
                 _df_rk.index.name = "Pos"
 
-                st.dataframe(
+                _tabela(
                     _df_rk,
-                    use_container_width=True,
-                    hide_index=False,
-                    column_config={
-                        "Q1 %":  st.column_config.NumberColumn("Q1 %",  width="small", format="%.1f%%"),
-                        "Q2 %":  st.column_config.NumberColumn("Q2 %",  width="small", format="%.1f%%"),
-                        "Q3 %":  st.column_config.NumberColumn("Q3 %",  width="small", format="%.1f%%"),
-                        "Q4 %":  st.column_config.NumberColumn("Q4 %",  width="small", format="%.1f%%"),
-                        "Média": st.column_config.NumberColumn("Média", width="small", format="%.1f%%"),
-                    },
+                    key="tv_rk_consultor",
+                    show_index=True,
+                    pct_cols=("Q1 %", "Q2 %", "Q3 %", "Q4 %", "Média"),
                 )
             else:
                 st.info("Nenhum consultor encontrado para os filtros selecionados.")
@@ -2692,15 +2695,9 @@ with tab4:
         )
         tabela_funil = funil_df.copy()
         tabela_funil["%"] = tabela_funil["%"].apply(lambda x: f"{x:.1f}%".replace(".", ","))
-        st.dataframe(
+        _tabela(
             tabela_funil.rename(columns={COL_RAZAO: "Razão do Status", "Quantidade": "Qtd"}),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Razão do Status": st.column_config.TextColumn("Razão do Status", width="large"),
-                "Qtd":             st.column_config.NumberColumn("Qtd", width="small"),
-                "%":               st.column_config.TextColumn("%", width="small"),
-            }
+            key="tv_funil",
         )
 
     st.markdown("---")
