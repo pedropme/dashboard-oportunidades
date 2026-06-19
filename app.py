@@ -749,9 +749,22 @@ def card(t, v):
 # HELPER: tabela com filtros por coluna (AgGrid)
 # =========================
 def _tabela(df, key, height=None, show_index=False, pct_cols=()):
-    """Exibe DataFrame com filtros Excel-like clicáveis nos cabeçalhos."""
+    """Exibe DataFrame com filtros Excel-like clicáveis nos cabeçalhos e botão de download."""
     from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
     _df = df.reset_index() if show_index else df.reset_index(drop=True)
+
+    # Botão de download (CSV separado por ; para abrir corretamente no Excel BR)
+    _csv = _df.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
+    _dl_col, _ = st.columns([1, 6])
+    with _dl_col:
+        st.download_button(
+            label="⬇️ Baixar CSV",
+            data=_csv,
+            file_name=f"{key}.csv",
+            mime="text/csv",
+            key=f"dl_{key}",
+        )
+
     gb = GridOptionsBuilder.from_dataframe(_df)
     gb.configure_default_column(
         filter=True,
