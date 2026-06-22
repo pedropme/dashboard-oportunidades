@@ -1243,7 +1243,7 @@ with tab1:
         # =========================
         # CONTROLES DO MAPA
         # =========================
-        mostrar_dados = st.toggle("Mostrar dados no mapa", value=False)
+        mostrar_dados = st.toggle("Mostrar dados no mapa", value=True)
 
         # ── Tipo de informação ────────────────────────────────────────────────
         _lbl_m = "font-size:14px; font-weight:500; margin:0; padding-top:5px;"
@@ -1272,6 +1272,7 @@ with tab1:
             somente_abertas = st.radio(
                 "Exibição de oportunidades (municípios)",
                 options=["Todos com oportunidades", "Somente em aberto"],
+                index=1,
                 horizontal=True,
             )
         else:
