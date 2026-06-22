@@ -122,6 +122,24 @@ def run_update():
 
             # ── 3. git add dados/ ──────────────────────────────────────────
             log("\nPreparando arquivos para envio...")
+
+            # Mostra quais arquivos em dados/ têm alterações
+            r_status = subprocess.run(
+                ["git", "status", "--short", "dados/"],
+                cwd=PROJECT_DIR,
+                capture_output=True,
+                text=True
+            )
+            arquivos_alterados = [
+                l.strip() for l in r_status.stdout.splitlines() if l.strip()
+            ]
+            if arquivos_alterados:
+                log("  Arquivos com alterações detectadas:", "gray")
+                for arq in arquivos_alterados:
+                    log(f"    {arq}", "gray")
+            else:
+                log("  Nenhuma alteração detectada na pasta dados/", "gray")
+
             r = subprocess.run(
                 ["git", "add", "dados/"],
                 cwd=PROJECT_DIR,
@@ -129,7 +147,7 @@ def run_update():
                 text=True
             )
             if r.returncode == 0:
-                log("✓ Arquivos da pasta dados/ preparados", "green")
+                log("✓ Todos os arquivos da pasta dados/ preparados", "green")
             else:
                 log(f"✗ Erro ao preparar arquivos:\n{r.stderr}", "red")
                 ok_geral = False
@@ -204,7 +222,7 @@ tk.Label(
 
 tk.Label(
     root,
-    text="Baixa vendas (Analysis BI) + oportunidades CNH (CRM)\ne envia todos os arquivos para o GitHub.",
+    text="Baixa vendas e oportunidades, e envia para o GitHub\ntodos os arquivos da pasta dados/ (inclusive atualizações manuais).",
     font=("Segoe UI", 9),
     bg="#1e1e2e",
     fg="#a6adc8",
