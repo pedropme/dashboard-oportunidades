@@ -1512,9 +1512,9 @@ with tab1:
             _tabela(tabela_desc_mun, key="tv_desc_mun")
         else:
             # ── MAPA MATRIZ DE PERFORMANCE ────────────────────────────────────
-            _mes_atual = pd.Timestamp.today().month
-            _mes_col   = ["JAN","FEV","MAR","ABR","MAI","JUN",
-                          "JUL","AGO","SET","OUT","NOV","DEZ"][_mes_atual - 1]
+            # Usa a mesma lógica do ranking de consultores (Tab 3):
+            # pontuação trimestral acumulada, média dos trimestres já iniciados.
+            _mes_atual_mp = pd.Timestamp.today().month
 
             # Metas dos consultores ativos
             _mp_metas = pd.read_excel("dados/metas.xlsx")
@@ -1542,28 +1542,52 @@ with tab1:
             if vendedor != "Todos":
                 _mp_ter = _mp_ter[_mp_ter["NOME CRM"] == vendedor]
 
-            # Atingimento do mês corrente por consultor
+            def _mp_real(cons, prod, mes):
+                f = realizado[
+                    (realizado["CONSULTOR"] == cons) &
+                    (realizado["PRODUTO"]   == prod) &
+                    (realizado["MES"]       == mes)
+                ]
+                return f["REALIZADO"].sum() if not f.empty else 0
+
+            def _mp_score(real, meta, base):
+                if pd.isna(real) or pd.isna(meta) or meta <= 0 or real < meta:
+                    return 0.0
+                return base + base * min((real - meta) / meta, 1.0) * 0.20
+
+            # Média de performance (idêntica ao ranking do Tab 3) por consultor
             _mp_rows = []
             for _nome_bi in _mp_ter["NOME BI"].dropna().unique():
                 _cons_metas = _mp_metas[_mp_metas["CONSULTOR"] == _nome_bi]
                 if _cons_metas.empty:
                     continue
-                _pcts = []
-                for _, _mrow in _cons_metas.iterrows():
-                    _meta_mes = _mrow.get(_mes_col, 0)
-                    if pd.isna(_meta_mes) or _meta_mes <= 0:
-                        continue
-                    _real_mes = realizado[
-                        (realizado["CONSULTOR"] == _nome_bi) &
-                        (realizado["PRODUTO"]   == _mrow["PRODUTO"]) &
-                        (realizado["MES"]       == _mes_atual)
-                    ]["REALIZADO"].sum()
-                    _pcts.append(_real_mes / _meta_mes * 100)
-                if _pcts:
-                    _mp_rows.append({
-                        "NOME BI": _nome_bi,
-                        "Atingimento": sum(_pcts) / len(_pcts),
-                    })
+                _n    = len(_cons_metas)
+                _base = (100 / _n) if _n > 0 else 0
+                _pq1 = _pq2 = _pq3 = _pq4 = 0.0
+                for _, _mr in _cons_metas.iterrows():
+                    _p   = _mr["PRODUTO"]
+                    _mq1 = _mr["JAN"] + _mr["FEV"] + _mr["MAR"]
+                    _mq2 = _mr["ABR"] + _mr["MAI"] + _mr["JUN"]
+                    _mq3 = _mr["JUL"] + _mr["AGO"] + _mr["SET"]
+                    _mq4 = _mr["OUT"] + _mr["NOV"] + _mr["DEZ"]
+                    _rq1 = sum(_mp_real(_nome_bi, _p, m) for m in [1,2,3])
+                    _rq2 = sum(_mp_real(_nome_bi, _p, m) for m in [4,5,6])
+                    _rq3 = sum(_mp_real(_nome_bi, _p, m) for m in [7,8,9])
+                    _rq4 = sum(_mp_real(_nome_bi, _p, m) for m in [10,11,12])
+                    _pq1 += _mp_score(_rq1, _mq1, _base)
+                    _pq2 += _mp_score(_rq2, _mq2, _base)
+                    _pq3 += _mp_score(_rq3, _mq3, _base)
+                    _pq4 += _mp_score(_rq4, _mq4, _base)
+                _vals = (
+                    [round(_pq1, 1)] * int(_mes_atual_mp >= 1)
+                    + [round(_pq2, 1)] * int(_mes_atual_mp >= 4)
+                    + [round(_pq3, 1)] * int(_mes_atual_mp >= 7)
+                    + [round(_pq4, 1)] * int(_mes_atual_mp >= 10)
+                )
+                _mp_rows.append({
+                    "NOME BI":    _nome_bi,
+                    "Atingimento": sum(_vals) / len(_vals) if _vals else 0.0,
+                })
 
             if not _mp_rows:
                 st.info("Nenhum dado de performance encontrado para os filtros selecionados.")
