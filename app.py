@@ -179,7 +179,7 @@ st.markdown(
 
 _tabs_labels = [
     "📊 Resumo por Vendedor",
-    "🏙️ Resumo por Município",
+    "🗺️ Resumo em Mapas",
     "📈 Matriz de Performance",
     "🔽 Funil de Vendas",
 ]
@@ -1126,7 +1126,7 @@ with tab1:
     # =========================
     with tab2:
 
-        st.subheader("Mapa de Oportunidades por Município")
+        st.subheader("Resumo em Mapas")
 
         # =========================
         # MUNICÍPIOS / FILIAL / REGIÃO
@@ -1243,25 +1243,39 @@ with tab1:
         # =========================
         # CONTROLES DO MAPA
         # =========================
-        col_toggle1, col_toggle2 = st.columns([1, 1])
+        mostrar_dados = st.toggle("Mostrar dados no mapa", value=False)
 
-        with col_toggle1:
-
-            mostrar_dados = st.toggle(
-                "Mostrar dados territoriais no mapa",
-                value=False
+        # ── Tipo de informação ────────────────────────────────────────────────
+        _lbl_m = "font-size:14px; font-weight:500; margin:0; padding-top:5px;"
+        st.markdown(
+            "<p style='font-size:14px; font-weight:600; margin:6px 0 2px 0;'>Tipo de informação</p>",
+            unsafe_allow_html=True,
+        )
+        _ma, _mb, _mc, _ = st.columns([1.3, 0.5, 2.0, 6], gap="small")
+        with _ma:
+            st.markdown(
+                f"<p style='{_lbl_m} text-align:right;'>Oportunidades</p>",
+                unsafe_allow_html=True,
+            )
+        with _mb:
+            _mapa_matriz = st.toggle("", key="mapa_tipo_toggle", label_visibility="collapsed")
+        with _mc:
+            st.markdown(
+                f"<p style='{_lbl_m}'>Matriz de Performance</p>",
+                unsafe_allow_html=True,
             )
 
-        with col_toggle2:
+        _tipo_mapa = "Matriz de Performance" if _mapa_matriz else "Oportunidades"
 
+        # ── Exibição de oportunidades (apenas no modo Oportunidades) ─────────
+        if _tipo_mapa == "Oportunidades":
             somente_abertas = st.radio(
-                "Municípios exibidos",
-                options=[
-                    "Todos com oportunidades",
-                    "Somente em aberto"
-                ],
-                horizontal=True
+                "Exibição de oportunidades (municípios)",
+                options=["Todos com oportunidades", "Somente em aberto"],
+                horizontal=True,
             )
+        else:
+            somente_abertas = "Todos com oportunidades"
 
         # =========================
         # MAPA INTERATIVO
@@ -1271,229 +1285,232 @@ with tab1:
 
         mapa_geo = mapa.to_crs(epsg=4326)
 
-        # =========================
-        # FILTRO DE MUNICÍPIOS
-        # =========================
-        if somente_abertas == "Somente em aberto":
+        if _tipo_mapa == "Oportunidades":
+            # =========================
+            # FILTRO DE MUNICÍPIOS
+            # =========================
+            if somente_abertas == "Somente em aberto":
 
-            mapa_geo = mapa_geo[
-                mapa_geo["Oportunidades Em Aberto"] > 0
+                mapa_geo = mapa_geo[
+                    mapa_geo["Oportunidades Em Aberto"] > 0
+                ].copy()
+
+            else:
+
+                mapa_geo = mapa_geo[
+                    mapa_geo["Oportunidades Total"] > 0
+                ].copy()
+
+            # mapa leve
+            m = folium.Map(
+                location=[-15, -55],
+                zoom_start=4,
+                tiles="cartodbpositron"
+            )
+            # =========================
+            # MOSTRAR MUNICÍPIOS
+            # =========================
+            if mostrar_dados:
+
+                for _, row in mapa_geo.iterrows():
+
+                    tooltip = f"""
+                    <b>Município:</b> {row['NM_MUN']}<br>
+                    <b>UF:</b> {row['SIGLA_UF']}<br>
+                    <b>Filial:</b> {row['Filial']}<br>
+                    <b>Região:</b> {row['Região']}<br>
+                    <b>Oportunidades Total:</b> {int(row['Oportunidades Total'])}<br>
+                    <b>Oportunidades Em Aberto:</b> {int(row['Oportunidades Em Aberto'])}
+                    """
+
+                    folium.GeoJson(
+                        row["geometry"],
+                        style_function=lambda x: {
+                            "fillColor": "#1565C0",
+                            "color": "#0D47A1",
+                            "weight": 2,
+                            "fillOpacity": 0.35,
+                        },
+                        tooltip=tooltip
+                    ).add_to(m)
+
+            # =========================
+            # EXIBIR MAPA
+            # =========================
+            st_folium(
+                m,
+                width=None,
+                height=650
+            )
+
+            # =========================
+            # TABELA FINAL
+            # =========================
+            tabela_municipios = mapa_tabela[
+                [
+                    "NM_MUN",
+                    "SIGLA_UF",
+                    "Filial",
+                    "Região",
+                    "Oportunidades Total",
+                    "Oportunidades Em Aberto"
+                ]
             ].copy()
 
-        else:
-
-            mapa_geo = mapa_geo[
-                mapa_geo["Oportunidades Total"] > 0
-            ].copy()
-
-        # mapa leve
-        m = folium.Map(
-            location=[-15, -55],
-            zoom_start=4,
-            tiles="cartodbpositron"
-        )
-        # =========================
-        # MOSTRAR MUNICÍPIOS
-        # =========================
-        if mostrar_dados:
-
-            for _, row in mapa_geo.iterrows():
-
-                tooltip = f"""
-                <b>Município:</b> {row['NM_MUN']}<br>
-                <b>UF:</b> {row['SIGLA_UF']}<br>
-                <b>Filial:</b> {row['Filial']}<br>
-                <b>Região:</b> {row['Região']}<br>
-                <b>Oportunidades Total:</b> {int(row['Oportunidades Total'])}<br>
-                <b>Oportunidades Em Aberto:</b> {int(row['Oportunidades Em Aberto'])}
-                """
-
-                folium.GeoJson(
-                    row["geometry"],
-                    style_function=lambda x: {
-                        "fillColor": "#1565C0",
-                        "color": "#0D47A1",
-                        "weight": 2,
-                        "fillOpacity": 0.35,
-                    },
-                    tooltip=tooltip
-                ).add_to(m)
-
-        # =========================
-        # EXIBIR MAPA
-        # =========================
-        st_folium(
-            m,
-            width=None,
-            height=650
-        )
-
-        # =========================
-        # TABELA FINAL
-        # =========================
-        tabela_municipios = mapa_tabela[
-            [
-                "NM_MUN",
-                "SIGLA_UF",
+            tabela_municipios.columns = [
+                "Município",
+                "UF",
                 "Filial",
                 "Região",
                 "Oportunidades Total",
                 "Oportunidades Em Aberto"
             ]
-        ].copy()
 
-        tabela_municipios.columns = [
-            "Município",
-            "UF",
-            "Filial",
-            "Região",
-            "Oportunidades Total",
-            "Oportunidades Em Aberto"
-        ]
-
-        tabela_municipios = tabela_municipios.sort_values(
-            "Oportunidades Total",
-            ascending=False
-        )
-
-        _tabela(tabela_municipios, key="tv_municipios")
-
-        # =========================
-        # DESCRITIVO OPORTUNIDADES
-        # =========================
-        st.markdown("### Descritivo das Oportunidades")
-
-        # Respeita o rádio "somente em aberto"
-        if somente_abertas == "Somente em aberto":
-            df_detail_mun = opp_filtrada[
-                ~opp_filtrada["Status"]
-                .str.upper()
-                .str.contains("GANH|PERD", na=False)
-            ].copy()
-        else:
-            df_detail_mun = opp_filtrada.copy()
-
-        total_desc_mun = len(df_detail_mun)
-        st.markdown(
-            f"<span style='font-size:15px;'>Total de oportunidades: <b>{total_desc_mun:,}</b></span>".replace(",", "."),
-            unsafe_allow_html=True
-        )
-
-        # Normaliza CD_MUN e marca linhas sem município
-        df_detail_mun["CD_MUN"] = (
-            df_detail_mun["CD_MUN"].astype(str).str.strip()
-        )
-        df_detail_mun.loc[
-            df_detail_mun["CD_MUN"].isin(["nan", "None", ""]),
-            "CD_MUN"
-        ] = None
-        df_detail_mun["_usa_fallback"] = df_detail_mun["CD_MUN"].isna()
-
-        # Fallback: busca município pelo documento quando o vendedor não bate
-        base_mun_doc2 = (
-            clientes[[COL_DOC, COL_MUN]]
-            .drop_duplicates(subset=[COL_DOC])
-            .copy()
-        )
-        base_mun_doc2[COL_MUN] = (
-            base_mun_doc2[COL_MUN].astype(str).str.strip()
-        )
-        df_detail_mun = df_detail_mun.merge(
-            base_mun_doc2.rename(columns={COL_MUN: "CD_MUN_fallback"}),
-            on=COL_DOC,
-            how="left"
-        )
-        df_detail_mun.loc[
-            df_detail_mun["_usa_fallback"],
-            "CD_MUN"
-        ] = df_detail_mun.loc[
-            df_detail_mun["_usa_fallback"],
-            "CD_MUN_fallback"
-        ]
-
-        # Nomes de município
-        mun_nome2 = gdf_mun[["CD_MUN", "NM_MUN", "SIGLA_UF"]].copy()
-        mun_nome2["CD_MUN"] = mun_nome2["CD_MUN"].astype(str).str.strip()
-        df_detail_mun = df_detail_mun.merge(mun_nome2, on="CD_MUN", how="left")
-
-        # Filial/Região pelo vendedor da oportunidade (caminho primário)
-        df_detail_mun = df_detail_mun.merge(
-            dados_vendedor[[COL_VEND, "Filial", "Região"]],
-            on=COL_VEND,
-            how="left"
-        )
-
-        # Lookup do vendedor ativo por município (fallback)
-        territorio_por_mun2 = (
-            territorio[["Código IBGE", "NOME CRM", "Filial", "Região"]]
-            .drop_duplicates(subset=["Código IBGE"])
-            .copy()
-        )
-        territorio_por_mun2["Código IBGE"] = (
-            territorio_por_mun2["Código IBGE"].astype(str).str.strip()
-        )
-        territorio_por_mun2 = territorio_por_mun2.rename(columns={
-            "Código IBGE": "CD_MUN",
-            "NOME CRM": "Vendedor_Ativo",
-            "Filial": "Filial_Ativo",
-            "Região": "Região_Ativo"
-        })
-        df_detail_mun = df_detail_mun.merge(
-            territorio_por_mun2, on="CD_MUN", how="left"
-        )
-
-        # Sobrescreve vendedor/filial/região para linhas de fallback
-        fb2 = df_detail_mun["_usa_fallback"]
-        df_detail_mun.loc[fb2, COL_VEND] = df_detail_mun.loc[fb2, "Vendedor_Ativo"]
-        df_detail_mun.loc[fb2, "Filial"]  = df_detail_mun.loc[fb2, "Filial_Ativo"]
-        df_detail_mun.loc[fb2, "Região"]  = df_detail_mun.loc[fb2, "Região_Ativo"]
-
-        # Dias desde a criação
-        df_detail_mun["Dias desde Criação"] = (
-            pd.Timestamp.today() - df_detail_mun["Data de Criação"]
-        ).dt.days
-
-        # Valor Total em R$
-        df_detail_mun["Valor Total"] = df_detail_mun["Valor Total"].apply(
-            lambda x: (
-                "R$ " + f"{round(x):,}".replace(",", ".")
-                if pd.notna(x) else ""
+            tabela_municipios = tabela_municipios.sort_values(
+                "Oportunidades Total",
+                ascending=False
             )
-        )
 
-        # Criador: "Criado pelo celular" se preenchido, senão "Criada Por"
-        _cel2 = df_detail_mun["Criado pelo celular"].astype(str).str.strip()
-        df_detail_mun["Criador"] = _cel2.where(
-            ~_cel2.isin(["", "nan", "None"]),
-            df_detail_mun["Criada Por"].fillna("")
-        )
+            _tabela(tabela_municipios, key="tv_municipios")
 
-        tabela_desc_mun = (
-            df_detail_mun[
-                [
-                    "Data de Criação",
-                    "Cliente",
-                    COL_DOC,
-                    "NM_MUN",
-                    "SIGLA_UF",
-                    COL_VEND,
-                    "Filial",
-                    "Região",
-                    "Valor Total",
-                    "Dias desde Criação",
-                    "Criador"
-                ]
+            # =========================
+            # DESCRITIVO OPORTUNIDADES
+            # =========================
+            st.markdown("### Descritivo das Oportunidades")
+
+            # Respeita o rádio "somente em aberto"
+            if somente_abertas == "Somente em aberto":
+                df_detail_mun = opp_filtrada[
+                    ~opp_filtrada["Status"]
+                    .str.upper()
+                    .str.contains("GANH|PERD", na=False)
+                ].copy()
+            else:
+                df_detail_mun = opp_filtrada.copy()
+
+            total_desc_mun = len(df_detail_mun)
+            st.markdown(
+                f"<span style='font-size:15px;'>Total de oportunidades: <b>{total_desc_mun:,}</b></span>".replace(",", "."),
+                unsafe_allow_html=True
+            )
+
+            # Normaliza CD_MUN e marca linhas sem município
+            df_detail_mun["CD_MUN"] = (
+                df_detail_mun["CD_MUN"].astype(str).str.strip()
+            )
+            df_detail_mun.loc[
+                df_detail_mun["CD_MUN"].isin(["nan", "None", ""]),
+                "CD_MUN"
+            ] = None
+            df_detail_mun["_usa_fallback"] = df_detail_mun["CD_MUN"].isna()
+
+            # Fallback: busca município pelo documento quando o vendedor não bate
+            base_mun_doc2 = (
+                clientes[[COL_DOC, COL_MUN]]
+                .drop_duplicates(subset=[COL_DOC])
+                .copy()
+            )
+            base_mun_doc2[COL_MUN] = (
+                base_mun_doc2[COL_MUN].astype(str).str.strip()
+            )
+            df_detail_mun = df_detail_mun.merge(
+                base_mun_doc2.rename(columns={COL_MUN: "CD_MUN_fallback"}),
+                on=COL_DOC,
+                how="left"
+            )
+            df_detail_mun.loc[
+                df_detail_mun["_usa_fallback"],
+                "CD_MUN"
+            ] = df_detail_mun.loc[
+                df_detail_mun["_usa_fallback"],
+                "CD_MUN_fallback"
             ]
-            .rename(columns={
-                COL_DOC: "Documento",
-                "NM_MUN": "Município",
-                "SIGLA_UF": "UF",
-                COL_VEND: "Vendedor"
-            })
-            .sort_values("Data de Criação", ascending=False)
-        )
 
-        _tabela(tabela_desc_mun, key="tv_desc_mun")
+            # Nomes de município
+            mun_nome2 = gdf_mun[["CD_MUN", "NM_MUN", "SIGLA_UF"]].copy()
+            mun_nome2["CD_MUN"] = mun_nome2["CD_MUN"].astype(str).str.strip()
+            df_detail_mun = df_detail_mun.merge(mun_nome2, on="CD_MUN", how="left")
+
+            # Filial/Região pelo vendedor da oportunidade (caminho primário)
+            df_detail_mun = df_detail_mun.merge(
+                dados_vendedor[[COL_VEND, "Filial", "Região"]],
+                on=COL_VEND,
+                how="left"
+            )
+
+            # Lookup do vendedor ativo por município (fallback)
+            territorio_por_mun2 = (
+                territorio[["Código IBGE", "NOME CRM", "Filial", "Região"]]
+                .drop_duplicates(subset=["Código IBGE"])
+                .copy()
+            )
+            territorio_por_mun2["Código IBGE"] = (
+                territorio_por_mun2["Código IBGE"].astype(str).str.strip()
+            )
+            territorio_por_mun2 = territorio_por_mun2.rename(columns={
+                "Código IBGE": "CD_MUN",
+                "NOME CRM": "Vendedor_Ativo",
+                "Filial": "Filial_Ativo",
+                "Região": "Região_Ativo"
+            })
+            df_detail_mun = df_detail_mun.merge(
+                territorio_por_mun2, on="CD_MUN", how="left"
+            )
+
+            # Sobrescreve vendedor/filial/região para linhas de fallback
+            fb2 = df_detail_mun["_usa_fallback"]
+            df_detail_mun.loc[fb2, COL_VEND] = df_detail_mun.loc[fb2, "Vendedor_Ativo"]
+            df_detail_mun.loc[fb2, "Filial"]  = df_detail_mun.loc[fb2, "Filial_Ativo"]
+            df_detail_mun.loc[fb2, "Região"]  = df_detail_mun.loc[fb2, "Região_Ativo"]
+
+            # Dias desde a criação
+            df_detail_mun["Dias desde Criação"] = (
+                pd.Timestamp.today() - df_detail_mun["Data de Criação"]
+            ).dt.days
+
+            # Valor Total em R$
+            df_detail_mun["Valor Total"] = df_detail_mun["Valor Total"].apply(
+                lambda x: (
+                    "R$ " + f"{round(x):,}".replace(",", ".")
+                    if pd.notna(x) else ""
+                )
+            )
+
+            # Criador: "Criado pelo celular" se preenchido, senão "Criada Por"
+            _cel2 = df_detail_mun["Criado pelo celular"].astype(str).str.strip()
+            df_detail_mun["Criador"] = _cel2.where(
+                ~_cel2.isin(["", "nan", "None"]),
+                df_detail_mun["Criada Por"].fillna("")
+            )
+
+            tabela_desc_mun = (
+                df_detail_mun[
+                    [
+                        "Data de Criação",
+                        "Cliente",
+                        COL_DOC,
+                        "NM_MUN",
+                        "SIGLA_UF",
+                        COL_VEND,
+                        "Filial",
+                        "Região",
+                        "Valor Total",
+                        "Dias desde Criação",
+                        "Criador"
+                    ]
+                ]
+                .rename(columns={
+                    COL_DOC: "Documento",
+                    "NM_MUN": "Município",
+                    "SIGLA_UF": "UF",
+                    COL_VEND: "Vendedor"
+                })
+                .sort_values("Data de Criação", ascending=False)
+            )
+
+            _tabela(tabela_desc_mun, key="tv_desc_mun")
+        else:
+            st.info("Em desenvolvimento: visualização de Matriz de Performance no mapa.")
 
 # =========================
 # TAB 3 - MATRIZ
