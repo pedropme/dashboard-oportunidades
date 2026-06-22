@@ -1511,7 +1511,123 @@ with tab1:
 
             _tabela(tabela_desc_mun, key="tv_desc_mun")
         else:
-            st.info("Em desenvolvimento: visualização de Matriz de Performance no mapa.")
+            # ── MAPA MATRIZ DE PERFORMANCE ────────────────────────────────────
+            _mes_atual = pd.Timestamp.today().month
+            _mes_col   = ["JAN","FEV","MAR","ABR","MAI","JUN",
+                          "JUL","AGO","SET","OUT","NOV","DEZ"][_mes_atual - 1]
+
+            # Metas dos consultores ativos
+            _mp_metas = pd.read_excel("dados/metas.xlsx")
+            _mp_metas["CONSULTOR"] = normalizar(_mp_metas["CONSULTOR"])
+            _mp_metas["PRODUTO"]   = normalizar(_mp_metas["PRODUTO"])
+            _mp_metas["STATUS"]    = normalizar(_mp_metas["STATUS"])
+            _mp_metas = _mp_metas[
+                _mp_metas["STATUS"].str.contains("ATIVO", na=False)
+            ].copy()
+
+            # Território filtrado pelos seletores da sidebar
+            _mp_ter = (
+                territorio[["NOME BI", "NOME CRM", "Código IBGE", "Filial", "Região"]]
+                .drop_duplicates(subset=["NOME BI", "Código IBGE"])
+                .copy()
+            )
+            _mp_ter["Código IBGE"] = _mp_ter["Código IBGE"].astype(str).str.strip()
+
+            if regiao != "Todas":
+                _mp_ter = _mp_ter[_mp_ter["Região"] == regiao]
+            if _filiais_restritas:
+                _mp_ter = _mp_ter[_mp_ter["Filial"].isin(_filiais_restritas)]
+            elif filial != "Todas":
+                _mp_ter = _mp_ter[_mp_ter["Filial"] == filial]
+            if vendedor != "Todos":
+                _mp_ter = _mp_ter[_mp_ter["NOME CRM"] == vendedor]
+
+            # Atingimento do mês corrente por consultor
+            _mp_rows = []
+            for _nome_bi in _mp_ter["NOME BI"].dropna().unique():
+                _cons_metas = _mp_metas[_mp_metas["CONSULTOR"] == _nome_bi]
+                if _cons_metas.empty:
+                    continue
+                _pcts = []
+                for _, _mrow in _cons_metas.iterrows():
+                    _meta_mes = _mrow.get(_mes_col, 0)
+                    if pd.isna(_meta_mes) or _meta_mes <= 0:
+                        continue
+                    _real_mes = realizado[
+                        (realizado["CONSULTOR"] == _nome_bi) &
+                        (realizado["PRODUTO"]   == _mrow["PRODUTO"]) &
+                        (realizado["MES"]       == _mes_atual)
+                    ]["REALIZADO"].sum()
+                    _pcts.append(_real_mes / _meta_mes * 100)
+                if _pcts:
+                    _mp_rows.append({
+                        "NOME BI": _nome_bi,
+                        "Atingimento": sum(_pcts) / len(_pcts),
+                    })
+
+            if not _mp_rows:
+                st.info("Nenhum dado de performance encontrado para os filtros selecionados.")
+            else:
+                _df_mp = pd.DataFrame(_mp_rows)
+
+                # Média de atingimento por município (vários consultores → média)
+                _mp_ter_mun = _mp_ter[["NOME BI", "Código IBGE"]].drop_duplicates()
+                _df_mp_mun = (
+                    _df_mp
+                    .merge(_mp_ter_mun, on="NOME BI", how="left")
+                    .groupby("Código IBGE")["Atingimento"]
+                    .mean()
+                    .reset_index()
+                    .rename(columns={"Código IBGE": "CD_MUN"})
+                )
+
+                # Join com camada geográfica
+                _mapa_mp = (
+                    gdf_mun[["CD_MUN", "NM_MUN", "SIGLA_UF", "geometry"]]
+                    .merge(_df_mp_mun, on="CD_MUN", how="right")
+                    .to_crs(epsg=4326)
+                )
+
+                def _cor_ating(pct):
+                    if pct >= 60: return "#2E7D32"   # verde
+                    if pct >= 20: return "#F9A825"   # amarelo
+                    return "#C62828"                  # vermelho
+
+                m = folium.Map(
+                    location=[-15, -55], zoom_start=4, tiles="cartodbpositron"
+                )
+
+                for _, _row in _mapa_mp.iterrows():
+                    if _row["geometry"] is None:
+                        continue
+                    _cor = _cor_ating(_row["Atingimento"])
+                    _tip = (
+                        f"<b>Município:</b> {_row.get('NM_MUN','')}<br>"
+                        f"<b>UF:</b> {_row.get('SIGLA_UF','')}<br>"
+                        f"<b>Atingimento:</b> {_row['Atingimento']:.1f}%"
+                    )
+                    folium.GeoJson(
+                        _row["geometry"],
+                        style_function=lambda x, c=_cor: {
+                            "fillColor": c,
+                            "color": "#333",
+                            "weight": 1,
+                            "fillOpacity": 0.65,
+                        },
+                        tooltip=_tip,
+                    ).add_to(m)
+
+                st_folium(m, width=None, height=650)
+
+                # Legenda de cores
+                st.markdown(
+                    "<div style='display:flex;gap:24px;margin-top:6px;font-size:14px;'>"
+                    "<span>🟢 &ge; 60%</span>"
+                    "<span>🟡 20 – 59,9%</span>"
+                    "<span>🔴 &lt; 20%</span>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
 
 # =========================
 # TAB 3 - MATRIZ
