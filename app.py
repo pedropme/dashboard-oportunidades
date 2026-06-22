@@ -351,6 +351,13 @@ def load_metas_orcamento():
         pd.read_excel("dados/metas.xlsx", sheet_name="ORÇAMENTO")
     )
 
+@st.cache_data
+def load_metas_status():
+    df = pd.read_excel("dados/metas.xlsx")
+    df["CONSULTOR"] = normalizar(df["CONSULTOR"])
+    df["STATUS"]    = normalizar(df["STATUS"])
+    return df[["CONSULTOR", "STATUS"]].drop_duplicates(subset=["CONSULTOR"])
+
 clientes            = load_clientes()
 opp                 = load_opp()
 territorio          = load_territorio()
@@ -358,6 +365,7 @@ vendas, realizado   = load_vendas_e_realizado()
 rel_prod            = load_rel_prod()
 metas_loja          = load_metas_loja()
 metas_orcamento     = load_metas_orcamento()
+metas_status        = load_metas_status()
 
 # =========================
 # CRUZAMENTO MUNICÍPIO
@@ -595,6 +603,30 @@ if regiao != "Todas":
 if filial != "Todas":
     base_filtro_vendedor = base_filtro_vendedor[
         base_filtro_vendedor["Filial"] == filial
+    ]
+
+# ── Filtro de status (Ativos / Inativos / Todos) ─────────────────────────────
+_nome_bi_to_status = dict(zip(metas_status["CONSULTOR"], metas_status["STATUS"]))
+_crm_to_status = {
+    row["NOME CRM"]: _nome_bi_to_status.get(row["NOME BI"])
+    for _, row in territorio[["NOME CRM", "NOME BI"]].drop_duplicates(subset=["NOME CRM"]).iterrows()
+}
+
+status_filtro = st.sidebar.radio(
+    "Status",
+    ["Ativos", "Inativos", "Todos"],
+    index=0,
+)
+
+if status_filtro == "Ativos":
+    _crms_ok = {crm for crm, s in _crm_to_status.items() if s == "ATIVO"}
+    base_filtro_vendedor = base_filtro_vendedor[
+        base_filtro_vendedor[COL_VEND].isin(_crms_ok)
+    ]
+elif status_filtro == "Inativos":
+    _crms_ok = {crm for crm, s in _crm_to_status.items() if s == "INATIVO"}
+    base_filtro_vendedor = base_filtro_vendedor[
+        base_filtro_vendedor[COL_VEND].isin(_crms_ok)
     ]
 
 vendedor = st.sidebar.selectbox(
