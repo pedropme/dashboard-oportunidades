@@ -313,6 +313,34 @@ def load_vendas_e_realizado():
         .sum().reset_index()
     )
     realizado.columns = ["CONSULTOR", "PRODUTO", "MES", "REALIZADO"]
+
+    # ── Aba Consórcio: realizado já agregado por consultor/mês ───────────
+    _MES_MAP = {"JAN":1,"FEV":2,"MAR":3,"ABR":4,"MAI":5,"JUN":6,
+                "JUL":7,"AGO":8,"SET":9,"OUT":10,"NOV":11,"DEZ":12}
+    try:
+        df_cons = pd.read_excel("dados/vendas.xlsx", sheet_name="Consórcio")
+        df_cons["CONSULTOR"] = normalizar(df_cons["CONSULTOR"].astype(str))
+        df_cons_long = df_cons.melt(
+            id_vars=["CONSULTOR"],
+            value_vars=list(_MES_MAP.keys()),
+            var_name="MES_STR",
+            value_name="REALIZADO",
+        )
+        df_cons_long["MES"]     = df_cons_long["MES_STR"].map(_MES_MAP)
+        df_cons_long["PRODUTO"] = "CONSORCIO"
+        df_cons_long["REALIZADO"] = pd.to_numeric(
+            df_cons_long["REALIZADO"], errors="coerce"
+        ).fillna(0)
+        df_cons_agg = (
+            df_cons_long[df_cons_long["REALIZADO"] > 0]
+            .groupby(["CONSULTOR", "PRODUTO", "MES"])["REALIZADO"]
+            .sum()
+            .reset_index()
+        )
+        realizado = pd.concat([realizado, df_cons_agg], ignore_index=True)
+    except Exception:
+        pass  # aba ausente: continua sem consórcio
+
     return df, realizado
 
 @st.cache_data
