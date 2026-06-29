@@ -1604,9 +1604,9 @@ with tab1:
                     _rq3 = sum(_mp_real(_nome_bi, _p, m) for m in [7,8,9])
                     _rq4 = sum(_mp_real(_nome_bi, _p, m) for m in [10,11,12])
                     _pq1 += _mp_score(_rq1, _mq1, _base)
-                    _pq2 += _mp_score(_rq2, _mq2, _base)
-                    _pq3 += _mp_score(_rq3, _mq3, _base)
-                    _pq4 += _mp_score(_rq4, _mq4, _base)
+                    _pq2 += _mp_score(_rq2, _mq2, _base) if _mes_atual_mp >= 4  else 0
+                    _pq3 += _mp_score(_rq3, _mq3, _base) if _mes_atual_mp >= 7  else 0
+                    _pq4 += _mp_score(_rq4, _mq4, _base) if _mes_atual_mp >= 10 else 0
                 _vals = (
                     [round(_pq1, 1)] * int(_mes_atual_mp >= 1)
                     + [round(_pq2, 1)] * int(_mes_atual_mp >= 4)
@@ -2066,9 +2066,9 @@ with tab3:
                         return base + base * min((real - meta) / meta, 1.0) * 0.20
 
                     _lpq1r += _lrs(_lrrq1, _lrmq1, _lb_r)
-                    _lpq2r += _lrs(_lrrq2, _lrmq2, _lb_r)
-                    _lpq3r += _lrs(_lrrq3, _lrmq3, _lb_r)
-                    _lpq4r += _lrs(_lrrq4, _lrmq4, _lb_r)
+                    _lpq2r += _lrs(_lrrq2, _lrmq2, _lb_r) if _mes_atual >= 4  else 0
+                    _lpq3r += _lrs(_lrrq3, _lrmq3, _lb_r) if _mes_atual >= 7  else 0
+                    _lpq4r += _lrs(_lrrq4, _lrmq4, _lb_r) if _mes_atual >= 10 else 0
 
                 _lq1p = round(_lpq1r, 1)
                 _lq2p = round(_lpq2r, 1)
@@ -2154,6 +2154,7 @@ with tab3:
         # ACUMULADORES DE PONTUAÇÃO
         # =========================
 
+        _mes_hoje = pd.Timestamp.today().month
         total_p_q1 = 0
         total_p_q2 = 0
         total_p_q3 = 0
@@ -2665,9 +2666,9 @@ with tab3:
                 # PONTUAÇÃO POR TRIMESTRE
                 # =========================
                 p_q1 = calc_ponto(real_q1, meta_q1)
-                p_q2 = calc_ponto(real_q2, meta_q2)
-                p_q3 = calc_ponto(real_q3, meta_q3)
-                p_q4 = calc_ponto(real_q4, meta_q4)
+                p_q2 = calc_ponto(real_q2, meta_q2) if _mes_hoje >= 4  else 0.0
+                p_q3 = calc_ponto(real_q3, meta_q3) if _mes_hoje >= 7  else 0.0
+                p_q4 = calc_ponto(real_q4, meta_q4) if _mes_hoje >= 10 else 0.0
 
                 total_p_q1 += p_q1
                 total_p_q2 += p_q2
@@ -2764,9 +2765,9 @@ with tab3:
                         return base + base * min((real - meta) / meta, 1.0) * 0.20
 
                     _rk_pq1 += _rk_score(_rk_rq1, _rk_mq1, _rk_base)
-                    _rk_pq2 += _rk_score(_rk_rq2, _rk_mq2, _rk_base)
-                    _rk_pq3 += _rk_score(_rk_rq3, _rk_mq3, _rk_base)
-                    _rk_pq4 += _rk_score(_rk_rq4, _rk_mq4, _rk_base)
+                    _rk_pq2 += _rk_score(_rk_rq2, _rk_mq2, _rk_base) if _mes_atual >= 4  else 0
+                    _rk_pq3 += _rk_score(_rk_rq3, _rk_mq3, _rk_base) if _mes_atual >= 7  else 0
+                    _rk_pq4 += _rk_score(_rk_rq4, _rk_mq4, _rk_base) if _mes_atual >= 10 else 0
 
                 _rk_filial = (
                     _rk_mc["Filial"].dropna().iloc[0]
