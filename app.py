@@ -1579,8 +1579,9 @@ with tab1:
                 return f["REALIZADO"].sum() if not f.empty else 0
 
             def _mp_score(real, meta, base):
-                if pd.isna(real) or pd.isna(meta) or meta <= 0 or real < meta:
-                    return 0.0
+                if pd.isna(real) or pd.isna(meta): return 0.0
+                if meta == 0:  return base           # meta zerada = já batida
+                if real < meta: return 0.0
                 return base + base * min((real - meta) / meta, 1.0) * 0.20
 
             # Média de performance (idêntica ao ranking do Tab 3) por consultor
@@ -2060,7 +2061,8 @@ with tab3:
 
                     def _lrs(real, meta, base):
                         if pd.isna(real) or pd.isna(meta): return 0.0
-                        if meta <= 0 or real < meta: return 0.0
+                        if meta == 0:  return base           # meta zerada = já batida
+                        if real < meta: return 0.0
                         return base + base * min((real - meta) / meta, 1.0) * 0.20
 
                     _lpq1r += _lrs(_lrrq1, _lrmq1, _lb_r)
@@ -2653,10 +2655,9 @@ with tab3:
                 # =========================
                 def calc_ponto(real, meta):
                     real = 0 if pd.isna(real) else real
-                    meta = 0 if pd.isna(meta) else meta
-                    if meta <= 0 or real < meta:
-                        return 0.0
-                    # Bônus proporcional ao excesso acima da meta, até dobrar (máx +20%)
+                    if pd.isna(meta): return 0.0          # período sem meta definida
+                    if meta == 0: return _base_pct         # meta zerada = já batida
+                    if real < meta: return 0.0
                     excess_ratio = min((real - meta) / meta, 1.0)
                     return _base_pct + _base_pct * excess_ratio * 0.20
 
@@ -2757,10 +2758,9 @@ with tab3:
                     _rk_rq4  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [10, 11, 12])
 
                     def _rk_score(real, meta, base):
-                        if pd.isna(real) or pd.isna(meta):
-                            return 0.0
-                        if meta <= 0 or real < meta:
-                            return 0.0
+                        if pd.isna(real) or pd.isna(meta): return 0.0
+                        if meta == 0:  return base           # meta zerada = já batida
+                        if real < meta: return 0.0
                         return base + base * min((real - meta) / meta, 1.0) * 0.20
 
                     _rk_pq1 += _rk_score(_rk_rq1, _rk_mq1, _rk_base)
