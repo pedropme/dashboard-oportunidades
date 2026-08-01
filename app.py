@@ -72,7 +72,14 @@ _cookies = CookieController(key="pme_cookies")
 
 if "usuario" not in st.session_state:
     # ── Tentar restaurar sessão a partir do cookie (login persistente) ──
+    # O CookieController lê cookies via JavaScript (assíncrono): no primeiro
+    # render pode retornar None mesmo que o cookie exista. Um rerun extra
+    # garante que o JS já comunicou os valores antes de exibir o login.
     _auth_raw = _cookies.get("pme_auth")
+    if _auth_raw is None and not st.session_state.get("_cookie_check_done"):
+        st.session_state["_cookie_check_done"] = True
+        st.rerun()
+
     if _auth_raw:
         try:
             _auth_data = json.loads(_auth_raw)
@@ -138,7 +145,7 @@ if "usuario" not in st.session_state:
                     "%d/%m/%Y %H:%M"
                 )
                 _save_usuarios(_usuarios_db)
-                # Grava cookie com validade de 1 hora
+                # Grava cookie com validade de 8 horas
                 _cookies.set(
                     "pme_auth",
                     json.dumps({
@@ -150,9 +157,9 @@ if "usuario" not in st.session_state:
                         ),
                         "filial_restrita": _u.get("filial_restrita"),
                         "regiao_restrita": _u.get("regiao_restrita"),
-                        "exp":             time.time() + 3600,
+                        "exp":             time.time() + 28800,
                     }),
-                    max_age=3600,
+                    max_age=28800,
                 )
                 st.rerun()
             else:
