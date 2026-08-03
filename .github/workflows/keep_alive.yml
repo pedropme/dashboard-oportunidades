@@ -2,7 +2,7 @@ name: Keep Streamlit Alive
 
 on:
   schedule:
-    # Roda a cada 20 minutos (Streamlit dorme após ~30 min sem acesso)
+    # Roda a cada 20 minutos (Streamlit dorme apos ~30 min sem acesso)
     - cron: "*/20 * * * *"
   workflow_dispatch:
 
@@ -11,8 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping dashboard
+        continue-on-error: true
+        env:
+          APP_URL: ${{ secrets.STREAMLIT_URL }}
         run: |
+          if [ -z "$APP_URL" ]; then
+            echo "Secret STREAMLIT_URL nao configurado."
+            echo "Acesse: github.com/pedropme/dashboard-oportunidades/settings/secrets/actions"
+            echo "Crie o secret STREAMLIT_URL com a URL do dashboard no Streamlit Cloud."
+            exit 0
+          fi
           curl -sS --max-time 30 \
             -A "Mozilla/5.0 (keep-alive bot)" \
-            "${{ secrets.STREAMLIT_URL }}" \
-            -o /dev/null -w "Status: %{http_code}\n"
+            "$APP_URL" \
+            -o /dev/null -w "Status HTTP: %{http_code}\n" \
+            && echo "Ping OK" || echo "Ping falhou (app pode estar reiniciando)"
