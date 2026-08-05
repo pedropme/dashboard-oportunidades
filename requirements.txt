@@ -1,4 +1,8 @@
 streamlit
+# starlette 1.4.0 (05/08/2026) quebrou o GZipMiddleware do Streamlit:
+# GZipResponder passou a exigir thread_minimum_size. Remover o pin quando
+# o Streamlit lancar versao compativel.
+starlette<1.4
 pandas
 openpyxl
 altair
