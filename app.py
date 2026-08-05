@@ -73,16 +73,11 @@ _cookies = CookieController(key="pme_cookies")
 if "usuario" not in st.session_state:
     # ── Tentar restaurar sessão a partir do cookie (login persistente) ──
     # O CookieController lê cookies via JavaScript (assíncrono): no primeiro
-    # render self.__cookies ainda é None e .get() lança TypeError.
-    # Um rerun extra garante que o JS já comunicou os valores antes de exibir o login.
+    # render self.__cookies pode ser None e .get() lança TypeError.
     try:
         _auth_raw = _cookies.get("pme_auth")
     except Exception:
         _auth_raw = None
-
-    if _auth_raw is None and not st.session_state.get("_cookie_check_done"):
-        st.session_state["_cookie_check_done"] = True
-        st.rerun()
 
     if _auth_raw:
         try:
