@@ -3079,6 +3079,58 @@ if _perfil == "admin" and tab_admin is not None:
             "divisao":         "🗺️ Divisão",
         }
 
+        # ── Criação de novo usuário ───────────────────────
+        with st.expander("➕ Criar novo usuário", expanded=False):
+            with st.form("_fnovo_usuario", clear_on_submit=False):
+                _na, _nb = st.columns(2)
+                _novo_email = _na.text_input(
+                    "E-mail *", placeholder="usuario@pmemaquinas.com.br"
+                )
+                _novo_nome_u = _nb.text_input("Nome *", placeholder="Fulano")
+
+                _nc, _nd = st.columns(2)
+                _nova_senha_u = _nc.text_input("Senha *", type="password")
+                _novo_perfil_u = _nd.selectbox(
+                    "Perfil",
+                    options=["admin", "geral", "filial_restrita", "divisao"],
+                    format_func=lambda x: _perfil_labels.get(x, x),
+                    index=1,
+                )
+
+                _ne, _nf = st.columns(2)
+                _nova_filial_u = _ne.text_input(
+                    "Filial Restrita (vírgula p/ múltiplas)",
+                    placeholder="LINHARES",
+                )
+                _nova_regiao_u = _nf.text_input(
+                    "Região Restrita", placeholder="CERRADO"
+                )
+
+                _btn_criar = st.form_submit_button(
+                    "➕ Criar usuário", use_container_width=True, type="primary"
+                )
+
+                if _btn_criar:
+                    _email_novo = _novo_email.strip().lower()
+                    if not _email_novo or not _novo_nome_u.strip() or not _nova_senha_u:
+                        st.error("Preencha e-mail, nome e senha.")
+                    elif "@" not in _email_novo:
+                        st.error("E-mail inválido.")
+                    elif _email_novo in _db:
+                        st.error(f"O usuário **{_email_novo}** já existe.")
+                    else:
+                        _db[_email_novo] = {
+                            "senha":           _nova_senha_u,
+                            "perfil":          _novo_perfil_u,
+                            "nome":            _novo_nome_u.strip(),
+                            "filial_restrita": _nova_filial_u.strip().upper() or None,
+                            "regiao_restrita": _nova_regiao_u.strip().upper() or None,
+                            "ultimo_acesso":   None,
+                        }
+                        _save_usuarios(_db)
+                        st.success(f"✅ Usuário **{_email_novo}** criado com sucesso!")
+                        st.rerun()
+
         # ── Cabeçalho da tabela ───────────────────────────
         _hdr = st.columns([2.3, 1.0, 1.5, 1.8, 1.8, 1.3])
         for _hc, _ht in zip(
