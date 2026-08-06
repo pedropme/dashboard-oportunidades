@@ -63,8 +63,32 @@ def _save_usuarios(data):
     try:
         with open(USUARIOS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
     except Exception:
-        pass  # No Streamlit Cloud, alterações não persistem entre reinicializações
+        return False  # No Streamlit Cloud o disco é efêmero
+
+
+def _usuarios_via_secrets():
+    """True quando a fonte de usuários é o st.secrets (Streamlit Cloud)."""
+    try:
+        return "usuarios" in st.secrets
+    except Exception:
+        return False
+
+
+def _toml_usuario(email, dados):
+    """Gera o bloco TOML de um usuário para colar nos Secrets."""
+    linhas = [
+        f'[usuarios."{email}"]',
+        f'senha = "{dados.get("senha", "")}"',
+        f'perfil = "{dados.get("perfil", "geral")}"',
+        f'nome = "{dados.get("nome", "")}"',
+    ]
+    if dados.get("filial_restrita"):
+        linhas.append(f'filial_restrita = "{dados["filial_restrita"]}"')
+    if dados.get("regiao_restrita"):
+        linhas.append(f'regiao_restrita = "{dados["regiao_restrita"]}"')
+    return "\n".join(linhas)
 
 # Controlador de cookies — inicializado antes de qualquer st.stop()
 # para que funcione tanto na tela de login quanto no dashboard.
@@ -3079,9 +3103,14 @@ if _perfil == "admin" and tab_admin is not None:
             "divisao":         "🗺️ Divisão",
         }
 
+        # Listas de filiais e regiões vindas do território (já normalizadas)
+        _terr_adm      = load_territorio()
+        _opcoes_filial = sorted(_terr_adm["Filial"].dropna().unique())
+        _opcoes_regiao = sorted(_terr_adm["Região"].dropna().unique())
+
         # ── Criação de novo usuário ───────────────────────
         with st.expander("➕ Criar novo usuário", expanded=False):
-            with st.form("_fnovo_usuario", clear_on_submit=False):
+            with st.form("_fnovo_usuario", clear_on_submit=True):
                 _na, _nb = st.columns(2)
                 _novo_email = _na.text_input(
                     "E-mail *", placeholder="usuario@pmemaquinas.com.br"
@@ -3098,12 +3127,13 @@ if _perfil == "admin" and tab_admin is not None:
                 )
 
                 _ne, _nf = st.columns(2)
-                _nova_filial_u = _ne.text_input(
-                    "Filial Restrita (vírgula p/ múltiplas)",
-                    placeholder="LINHARES",
+                _nova_filial_u = _ne.multiselect(
+                    "Filial Restrita", options=_opcoes_filial,
+                    help="Use apenas com o perfil 📍 Filial Restrita",
                 )
-                _nova_regiao_u = _nf.text_input(
-                    "Região Restrita", placeholder="CERRADO"
+                _nova_regiao_u = _nf.selectbox(
+                    "Região Restrita", options=["—"] + _opcoes_regiao, index=0,
+                    help="Use apenas com o perfil 🗺️ Divisão",
                 )
 
                 _btn_criar = st.form_submit_button(
@@ -3119,17 +3149,35 @@ if _perfil == "admin" and tab_admin is not None:
                     elif _email_novo in _db:
                         st.error(f"O usuário **{_email_novo}** já existe.")
                     else:
-                        _db[_email_novo] = {
+                        _novo_reg = {
                             "senha":           _nova_senha_u,
                             "perfil":          _novo_perfil_u,
                             "nome":            _novo_nome_u.strip(),
-                            "filial_restrita": _nova_filial_u.strip().upper() or None,
-                            "regiao_restrita": _nova_regiao_u.strip().upper() or None,
+                            "filial_restrita": ",".join(_nova_filial_u) or None,
+                            "regiao_restrita": (
+                                None if _nova_regiao_u == "—" else _nova_regiao_u
+                            ),
                             "ultimo_acesso":   None,
                         }
-                        _save_usuarios(_db)
-                        st.success(f"✅ Usuário **{_email_novo}** criado com sucesso!")
-                        st.rerun()
+                        _db[_email_novo] = _novo_reg
+                        _gravou = _save_usuarios(_db)
+                        st.session_state["_novo_user_msg"] = (
+                            _email_novo, _gravou, _toml_usuario(_email_novo, _novo_reg)
+                        )
+
+        # Resultado da criação — fora do expander para ficar sempre visível
+        _msg = st.session_state.pop("_novo_user_msg", None)
+        if _msg:
+            _em, _gravou, _toml = _msg
+            st.success(f"✅ Usuário **{_em}** criado.")
+            if _usuarios_via_secrets() or not _gravou:
+                st.warning(
+                    "Este ambiente lê os usuários dos **Secrets** do Streamlit "
+                    "Cloud, então a criação acima vale só até o app reiniciar. "
+                    "Para tornar permanente, cole o bloco abaixo em "
+                    "**Manage app → Settings → Secrets**:"
+                )
+                st.code(_toml, language="toml")
 
         # ── Cabeçalho da tabela ───────────────────────────
         _hdr = st.columns([2.3, 1.0, 1.5, 1.8, 1.8, 1.3])
@@ -3184,13 +3232,23 @@ if _perfil == "admin" and tab_admin is not None:
                         index=_idx_p,
                     )
                     _fc, _fd = st.columns(2)
-                    _nova_filial_r = _fc.text_input(
-                        "Filial Restrita (vírgula p/ múltiplas)",
-                        value=_udata.get("filial_restrita") or "",
+                    _filiais_atuais = [
+                        f for f in (_udata.get("filial_restrita") or "").split(",")
+                        if f in _opcoes_filial
+                    ]
+                    _nova_filial_r = _fc.multiselect(
+                        "Filial Restrita",
+                        options=_opcoes_filial,
+                        default=_filiais_atuais,
                     )
-                    _nova_regiao_r = _fd.text_input(
+                    _regiao_atual = _udata.get("regiao_restrita") or "—"
+                    _nova_regiao_r = _fd.selectbox(
                         "Região Restrita",
-                        value=_udata.get("regiao_restrita") or "",
+                        options=["—"] + _opcoes_regiao,
+                        index=(
+                            (["—"] + _opcoes_regiao).index(_regiao_atual)
+                            if _regiao_atual in (["—"] + _opcoes_regiao) else 0
+                        ),
                     )
                     _nova_senha = st.text_input(
                         "Nova Senha (vazio = manter atual)",
@@ -3205,17 +3263,26 @@ if _perfil == "admin" and tab_admin is not None:
                         _db[_uemail]["nome"]   = _novo_nome
                         _db[_uemail]["perfil"] = _novo_perfil
                         _db[_uemail]["filial_restrita"] = (
-                            _nova_filial_r.strip().upper() or None
+                            ",".join(_nova_filial_r) or None
                         )
                         _db[_uemail]["regiao_restrita"] = (
-                            _nova_regiao_r.strip().upper() or None
+                            None if _nova_regiao_r == "—" else _nova_regiao_r
                         )
                         if _nova_senha:
                             _db[_uemail]["senha"] = _nova_senha
-                        _save_usuarios(_db)
+                        _gravou_ed = _save_usuarios(_db)
                         st.success(
                             f"✅ Usuário **{_uemail}** atualizado com sucesso!"
                         )
-                        st.rerun()
+                        if _usuarios_via_secrets() or not _gravou_ed:
+                            st.warning(
+                                "Alteração temporária — este ambiente lê os "
+                                "usuários dos **Secrets**. Atualize o bloco "
+                                "abaixo em **Manage app → Settings → Secrets**:"
+                            )
+                            st.code(
+                                _toml_usuario(_uemail, _db[_uemail]),
+                                language="toml",
+                            )
 
             st.divider()
