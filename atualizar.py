@@ -16,6 +16,14 @@ else:
 VENDAS_SCRIPT = os.path.join(PROJECT_DIR, "scripts", "baixar_vendas.py")
 CNH_SCRIPT    = os.path.join(PROJECT_DIR, "scripts", "baixar_cnh.py")
 
+# Bases que NÃO são baixadas automaticamente — atualizadas à mão pelo usuário.
+# São conferidas e enviadas junto com as demais no git add dados/.
+BASES_MANUAIS = [
+    ("Clientes",   "dados/clientes.xlsx"),
+    ("Metas",      "dados/metas.xlsx"),
+    ("Território", "dados/territorio.xlsx"),
+]
+
 
 def _python_exe():
     """Retorna o caminho do interpretador Python para subprocessos."""
@@ -120,7 +128,29 @@ def run_update():
             else:
                 log("  (script CNH não encontrado — pulando)", "gray")
 
-            # ── 3. git add dados/ ──────────────────────────────────────────
+            # ── 3. Conferência das bases manuais ──────────────────────────
+            log("\nConferindo bases atualizadas manualmente...")
+            r_mod = subprocess.run(
+                ["git", "status", "--short", "--", "dados/"],
+                cwd=PROJECT_DIR, capture_output=True, text=True
+            )
+            _modificados = {
+                l[3:].strip().strip('"') for l in r_mod.stdout.splitlines() if l.strip()
+            }
+            for _nome, _rel in BASES_MANUAIS:
+                _abs = os.path.join(PROJECT_DIR, _rel.replace("/", os.sep))
+                if not os.path.exists(_abs):
+                    log(f"  ✗ {_nome}: arquivo não encontrado ({_rel})", "red")
+                    continue
+                _dt = datetime.fromtimestamp(
+                    os.path.getmtime(_abs)
+                ).strftime("%d/%m/%Y %H:%M")
+                if _rel in _modificados:
+                    log(f"  ↑ {_nome}: alterado em {_dt} — será enviado", "green")
+                else:
+                    log(f"  = {_nome}: sem alterações (de {_dt})", "gray")
+
+            # ── 4. git add dados/ ──────────────────────────────────────────
             log("\nPreparando arquivos para envio...")
 
             # Mostra quais arquivos em dados/ têm alterações
@@ -152,7 +182,7 @@ def run_update():
                 log(f"✗ Erro ao preparar arquivos:\n{r.stderr}", "red")
                 ok_geral = False
 
-            # ── 4. git commit ──────────────────────────────────────────────
+            # ── 5. git commit ──────────────────────────────────────────────
             partes = []
             if vendas_ok: partes.append("vendas")
             if cnh_ok:    partes.append("CNH")
@@ -169,7 +199,7 @@ def run_update():
             else:
                 log("  Sem alterações novas para commitar", "orange")
 
-            # ── 5. git push ────────────────────────────────────────────────
+            # ── 6. git push ────────────────────────────────────────────────
             log("  Enviando ao GitHub...")
             r = subprocess.run(
                 ["git", "push", "origin", "main"],
