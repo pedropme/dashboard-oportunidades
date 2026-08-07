@@ -431,15 +431,18 @@ def _load_rel_prod(_assinatura):
     # "(Não Modificar) Oportunidade" da base de oportunidades). O relatório
     # tem uma linha por produto, então o ID repete — usá-lo permite contar
     # oportunidades distintas em vez de linhas de produto.
+    # Colunas AI (34, "Produto") e AV (47, "Tipo de Adicional") são
+    # complementares: máquinas preenchem Produto, implementos preenchem
+    # Tipo de Adicional.
     df = pd.read_excel(
         "dados/Relatorio de Oportunidades e Produtos.xlsx",
-        usecols=[0, 2, 3, 4, 5, 13, 20, 33, 35, 47]
+        usecols=[0, 2, 3, 4, 5, 13, 20, 33, 34, 35, 47]
     )
     df.columns = [
         COL_OPP_ID,
         "Cliente", COL_DOC, COL_CONC, COL_VEND,
         "Data de Criação", "Razão do Status",
-        "Tipo de Produto", "Família", "Tipo de Adicional",
+        "Tipo de Produto", "Produto", "Família", "Tipo de Adicional",
     ]
     df[COL_OPP_ID] = df[COL_OPP_ID].astype(str).str.strip()
     df[COL_VEND]          = normalizar(df[COL_VEND])
@@ -3162,7 +3165,50 @@ with tab4:
                 )
             )
 
-            st.altair_chart(chart_prod + text_prod, use_container_width=True)
+            # Gráfico à esquerda, quantitativos à direita
+            _c_graf, _c_qtd = st.columns([2.2, 1])
+
+            with _c_graf:
+                st.altair_chart(chart_prod + text_prod, use_container_width=True)
+
+            with _c_qtd:
+                # Produto (coluna AI) e Tipo de Adicional (coluna AV) são
+                # complementares no relatório: máquina preenche uma,
+                # implemento/acessório preenche a outra.
+                for _titulo, _coluna in [
+                    ("Produtos", "Produto"),
+                    ("Tipos de Adicional", "Tipo de Adicional"),
+                ]:
+                    _vc = (
+                        rel_funil[_coluna]
+                        .dropna()
+                        .astype(str)
+                        .str.strip()
+                        .replace("", pd.NA)
+                        .dropna()
+                        .value_counts()
+                    )
+                    st.markdown(f"**{_titulo}**")
+                    if _vc.empty:
+                        st.caption("Nenhum registro para os filtros atuais.")
+                    else:
+                        _tab = _vc.rename_axis(_coluna).reset_index(name="Qtd")
+                        _tab["%"] = (
+                            _tab["Qtd"] / _tab["Qtd"].sum() * 100
+                        ).round(1)
+                        st.dataframe(
+                            _tab,
+                            hide_index=True,
+                            use_container_width=True,
+                            height=min(320, 38 + 35 * len(_tab)),
+                            column_config={
+                                "Qtd": st.column_config.NumberColumn(width="small"),
+                                "%":   st.column_config.NumberColumn(
+                                    format="%.1f%%", width="small"
+                                ),
+                            },
+                        )
+                        st.caption(f"Total: {format_br(int(_tab['Qtd'].sum()))}")
 
 # =========================
 # PAINEL ADMINISTRAÇÃO
