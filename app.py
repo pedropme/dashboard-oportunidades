@@ -228,6 +228,28 @@ tab1, tab2, tab3, tab4 = _all_tabs[:4]
 tab_admin = _all_tabs[4] if _perfil == "admin" else None
 
 # =========================
+# INVALIDAÇÃO DE CACHE POR ARQUIVO
+# =========================
+def _sig(*paths):
+    """
+    Assinatura (mtime, tamanho) dos arquivos de dados.
+
+    Entra como argumento das funções @st.cache_data: quando um arquivo é
+    atualizado a assinatura muda, a chave do cache muda e o Streamlit relê
+    do disco. Sem isso o cache só é limpo no restart do app — foi o que fez
+    o dashboard continuar mostrando dados antigos após uma atualização.
+    """
+    marcas = []
+    for p in paths:
+        try:
+            s = os.stat(p)
+            marcas.append((p, s.st_mtime_ns, s.st_size))
+        except OSError:
+            marcas.append((p, None, None))
+    return tuple(marcas)
+
+
+# =========================
 # MAPA (CACHE)
 # =========================
 @st.cache_data
@@ -252,6 +274,10 @@ COL_DOC  = "Documento"
 COL_CONC = "Concessionaria"
 COL_MUN  = "CD_MUN"
 COL_VEND = "Vendedor"
+# GUID que identifica a oportunidade. Na base de oportunidades é a coluna
+# "(Não Modificar) Oportunidade"; no relatório de produtos é o
+# "Identificador da Oportunidade" — permite ligar produtos à oportunidade.
+COL_OPP_ID = "ID Oportunidade"
 
 # =========================
 # NORMALIZAÇÃO
@@ -295,8 +321,11 @@ def classificar_produto(row):
 # =========================
 # BASES (cacheadas)
 # =========================
-@st.cache_data
 def load_clientes():
+    return _load_clientes(_sig("dados/clientes.xlsx"))
+
+@st.cache_data
+def _load_clientes(_assinatura):
     df = pd.read_excel("dados/clientes.xlsx")
     df = df.rename(columns={
         "Documento (BR: CPF/CNPJ)": COL_DOC,
@@ -309,30 +338,42 @@ def load_clientes():
     df[COL_MUN]  = df[COL_MUN].astype(str).str.strip()
     return df
 
-@st.cache_data
 def load_opp():
+    return _load_opp(_sig("dados/oportunidades.xlsx"))
+
+@st.cache_data
+def _load_opp(_assinatura):
     df = pd.read_excel("dados/oportunidades.xlsx")
     df = df.rename(columns={
         "Vendedor (Conta) (Conta)":                   COL_VEND,
         "Conta":                                      "Cliente",
         "Documento (BR: CPF/CNPJ) (Conta) (Conta)":  COL_DOC,
         "Concessionária (Conta) (Conta)":             COL_CONC,
+        "(Não Modificar) Oportunidade":               COL_OPP_ID,
     })
+    if COL_OPP_ID in df.columns:
+        df[COL_OPP_ID] = df[COL_OPP_ID].astype(str).str.strip()
     df[COL_VEND] = normalizar(df[COL_VEND])
     df[COL_DOC]  = df[COL_DOC].astype(str).str.strip()
     df[COL_CONC] = normalizar(df[COL_CONC])
     df["Data de Criação"] = pd.to_datetime(df["Data de Criação"], errors="coerce")
     return df
 
-@st.cache_data
 def load_territorio():
+    return _load_territorio(_sig("dados/territorio.xlsx"))
+
+@st.cache_data
+def _load_territorio(_assinatura):
     df = pd.read_excel("dados/territorio.xlsx")
     for col in ["NOME CRM", "NOME BI", "Filial", "Região", "Marca"]:
         df[col] = normalizar(df[col])
     return df
 
-@st.cache_data
 def load_vendas_e_realizado():
+    return _load_vendas_e_realizado(_sig("dados/vendas.xlsx"))
+
+@st.cache_data
+def _load_vendas_e_realizado(_assinatura):
     df = pd.read_excel("dados/vendas.xlsx")
     for col in ["Segmento Maq", "Familia", "Tipo Produto",
                 "Grupo Modelo", "Vendedor", "Calc dim De Para Familia 2"]:
@@ -381,17 +422,26 @@ def load_vendas_e_realizado():
 
     return df, realizado
 
-@st.cache_data
 def load_rel_prod():
+    return _load_rel_prod(_sig("dados/Relatorio de Oportunidades e Produtos.xlsx"))
+
+@st.cache_data
+def _load_rel_prod(_assinatura):
+    # A coluna 0 é o Identificador da Oportunidade (mesmo GUID da coluna
+    # "(Não Modificar) Oportunidade" da base de oportunidades). O relatório
+    # tem uma linha por produto, então o ID repete — usá-lo permite contar
+    # oportunidades distintas em vez de linhas de produto.
     df = pd.read_excel(
         "dados/Relatorio de Oportunidades e Produtos.xlsx",
-        usecols=[2, 3, 4, 5, 13, 20, 33, 35, 47]
+        usecols=[0, 2, 3, 4, 5, 13, 20, 33, 35, 47]
     )
     df.columns = [
+        COL_OPP_ID,
         "Cliente", COL_DOC, COL_CONC, COL_VEND,
         "Data de Criação", "Razão do Status",
         "Tipo de Produto", "Família", "Tipo de Adicional",
     ]
+    df[COL_OPP_ID] = df[COL_OPP_ID].astype(str).str.strip()
     df[COL_VEND]          = normalizar(df[COL_VEND])
     df["Data de Criação"] = pd.to_datetime(df["Data de Criação"], dayfirst=True, errors="coerce")
     return df
@@ -405,20 +455,29 @@ def _normalizar_sheet_loja(df):
     ).str.strip()
     return df
 
-@st.cache_data
 def load_metas_loja():
+    return _load_metas_loja(_sig("dados/metas.xlsx"))
+
+@st.cache_data
+def _load_metas_loja(_assinatura):
     return _normalizar_sheet_loja(
         pd.read_excel("dados/metas.xlsx", sheet_name="LOJA")
     )
 
-@st.cache_data
 def load_metas_orcamento():
+    return _load_metas_orcamento(_sig("dados/metas.xlsx"))
+
+@st.cache_data
+def _load_metas_orcamento(_assinatura):
     return _normalizar_sheet_loja(
         pd.read_excel("dados/metas.xlsx", sheet_name="ORÇAMENTO")
     )
 
-@st.cache_data
 def load_metas_status():
+    return _load_metas_status(_sig("dados/metas.xlsx"))
+
+@st.cache_data
+def _load_metas_status(_assinatura):
     df = pd.read_excel("dados/metas.xlsx")
     df["CONSULTOR"] = normalizar(df["CONSULTOR"])
     df["STATUS"]    = normalizar(df["STATUS"])
@@ -3009,6 +3068,16 @@ with tab4:
             st.info("Nenhum produto encontrado para os filtros selecionados.")
         else:
             grand_total_prod = len(rel_funil)
+
+            # O relatório tem uma linha por produto: o total de barras conta
+            # produtos, não oportunidades. Explicita os dois para o número
+            # poder ser reconciliado com o card de oportunidades em aberto.
+            _n_opp_prod = rel_funil[COL_OPP_ID].nunique()
+            st.caption(
+                f"{format_br(grand_total_prod)} produtos em "
+                f"{format_br(_n_opp_prod)} oportunidades em aberto — "
+                "uma oportunidade pode ter mais de um produto."
+            )
 
             # Eixo Y sempre = Razão do Status
             # Cor: Categoria (padrão) ou Família Exibida (por_familia)
