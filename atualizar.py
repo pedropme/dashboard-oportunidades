@@ -60,10 +60,32 @@ def run_update():
             agora = datetime.now().strftime("%d/%m/%Y %H:%M")
             log(f"Iniciando atualização — {agora}\n", "gray")
 
-            # ── 1. Download de vendas.xlsx ─────────────────────────────────
+            # ── 1. Conferência das bases manuais ──────────────────────────
+            log("Conferindo bases atualizadas manualmente...")
+            r_mod = subprocess.run(
+                ["git", "status", "--short", "--", "dados/"],
+                cwd=PROJECT_DIR, capture_output=True, text=True
+            )
+            _modificados = {
+                l[3:].strip().strip('"') for l in r_mod.stdout.splitlines() if l.strip()
+            }
+            for _nome, _rel in BASES_MANUAIS:
+                _abs = os.path.join(PROJECT_DIR, _rel.replace("/", os.sep))
+                if not os.path.exists(_abs):
+                    log(f"  ✗ {_nome}: arquivo não encontrado ({_rel})", "red")
+                    continue
+                _dt = datetime.fromtimestamp(
+                    os.path.getmtime(_abs)
+                ).strftime("%d/%m/%Y %H:%M")
+                if _rel in _modificados:
+                    log(f"  ↑ {_nome}: alterado em {_dt} — será enviado", "green")
+                else:
+                    log(f"  = {_nome}: sem alterações (de {_dt})", "gray")
+
+            # ── 2. Download de vendas.xlsx ─────────────────────────────────
             vendas_ok = False
             if os.path.exists(VENDAS_SCRIPT):
-                log("Baixando base de vendas do portal Analysis BI...")
+                log("\nBaixando base de vendas do portal Analysis BI...")
                 py = _python_exe()
                 r = subprocess.run(
                     [py, VENDAS_SCRIPT, "--no-git"],
@@ -94,7 +116,7 @@ def run_update():
             else:
                 log("  (script de vendas não encontrado — pulando)", "gray")
 
-            # ── 2. Download de oportunidades CNH (CRM Dynamics) ───────────
+            # ── 3. Download de oportunidades CNH (CRM Dynamics) ───────────
             cnh_ok = False
             if os.path.exists(CNH_SCRIPT):
                 log("\nBaixando bases de oportunidades do CRM CNH...")
@@ -127,28 +149,6 @@ def run_update():
                     ok_geral = False
             else:
                 log("  (script CNH não encontrado — pulando)", "gray")
-
-            # ── 3. Conferência das bases manuais ──────────────────────────
-            log("\nConferindo bases atualizadas manualmente...")
-            r_mod = subprocess.run(
-                ["git", "status", "--short", "--", "dados/"],
-                cwd=PROJECT_DIR, capture_output=True, text=True
-            )
-            _modificados = {
-                l[3:].strip().strip('"') for l in r_mod.stdout.splitlines() if l.strip()
-            }
-            for _nome, _rel in BASES_MANUAIS:
-                _abs = os.path.join(PROJECT_DIR, _rel.replace("/", os.sep))
-                if not os.path.exists(_abs):
-                    log(f"  ✗ {_nome}: arquivo não encontrado ({_rel})", "red")
-                    continue
-                _dt = datetime.fromtimestamp(
-                    os.path.getmtime(_abs)
-                ).strftime("%d/%m/%Y %H:%M")
-                if _rel in _modificados:
-                    log(f"  ↑ {_nome}: alterado em {_dt} — será enviado", "green")
-                else:
-                    log(f"  = {_nome}: sem alterações (de {_dt})", "gray")
 
             # ── 4. git add dados/ ──────────────────────────────────────────
             log("\nPreparando arquivos para envio...")
