@@ -154,7 +154,15 @@ if "usuario" not in st.session_state:
         )
         if _login_btn:
             _usuarios_db = _load_usuarios()
-            _u = _usuarios_db.get(_email_input)
+            # Busca tolerante a maiúsculas/espaços (autofill costuma
+            # inserir espaço ou capitalizar a primeira letra)
+            _email_busca = _email_input.strip().lower()
+            _email_input = _email_busca
+            _u = None
+            for _k, _v in _usuarios_db.items():
+                if _k.strip().lower() == _email_busca:
+                    _u, _email_input = _v, _k
+                    break
             if _u and _u.get("senha") == _senha_input:
                 st.session_state.usuario         = _email_input
                 st.session_state.perfil          = _u.get("perfil", "geral")
