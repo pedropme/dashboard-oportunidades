@@ -436,14 +436,15 @@ def _load_rel_prod(_assinatura):
     # Tipo de Adicional.
     df = pd.read_excel(
         "dados/Relatorio de Oportunidades e Produtos.xlsx",
-        usecols=[0, 2, 3, 4, 5, 13, 20, 32, 33, 34, 35, 37, 38, 47]
+        usecols=[0, 2, 3, 4, 5, 13, 20, 32, 33, 34, 35, 36, 37, 38, 46, 47]
     )
     df.columns = [
         COL_OPP_ID,
         "Cliente", COL_DOC, COL_CONC, COL_VEND,
         "Data de Criação", "Razão do Status",
-        "Valor Total", "Tipo de Produto", "Produto", "Família",
-        "Preço por Unidade", "Quantidade", "Tipo de Adicional",
+        "Valor Total", "Tipo de Produto", "Produto", "Família", "Modelo",
+        "Preço por Unidade", "Quantidade",
+        "Descrição Implemento", "Tipo de Adicional",
     ]
     # O relatório vem agrupado por oportunidade: o ID só aparece na primeira
     # linha e as demais linhas de produto vêm em branco. O ffill reconstitui
@@ -1256,15 +1257,34 @@ with tab1:
     _itens = rel_prod.copy()
 
     def _texto(serie):
-        """Normaliza para string, tratando NA e placeholders como ausente."""
-        s = serie.astype("string").str.strip()
+        """
+        Normaliza para string, tratando NA e placeholders como ausente.
+        Colapsa quebras de linha: o tooltip usa \\n para separar os itens,
+        e algumas descrições do CRM vêm com quebras dentro do texto.
+        """
+        s = (
+            serie.astype("string")
+            .str.replace(r"\s*\n\s*", " / ", regex=True)
+            .str.strip()
+        )
         return s.mask(s.isin(["", "nan", "None", "<NA>"]))
 
-    # Máquina preenche "Produto"; implemento/acessório preenche "Tipo de
-    # Adicional" — um deles está vazio em cada linha.
-    _nome_item = (
-        _texto(_itens["Produto"])
+    # Máquina preenche "Produto" (e traz Modelo); implemento/acessório
+    # preenche "Tipo de Adicional" (e traz Descrição Implemento).
+    # Mostra o modelo para máquinas e a descrição para os demais.
+    # Sem Modelo, cai na categoria ("Tratores"): a coluna Descrição Produto
+    # é campo de observação livre e não serve como rótulo.
+    _eh_maquina = _texto(_itens["Produto"]).notna()
+    _desc_maquina = (
+        _texto(_itens["Modelo"])
+        .fillna(_texto(_itens["Produto"]))
+    )
+    _desc_implemento = (
+        _texto(_itens["Descrição Implemento"])
         .fillna(_texto(_itens["Tipo de Adicional"]))
+    )
+    _nome_item = (
+        _desc_maquina.where(_eh_maquina, _desc_implemento)
         .fillna("Item sem descrição")
     )
     _itens["_linha"] = (
