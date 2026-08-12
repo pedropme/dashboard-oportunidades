@@ -436,15 +436,26 @@ def _load_rel_prod(_assinatura):
     # Tipo de Adicional.
     df = pd.read_excel(
         "dados/Relatorio de Oportunidades e Produtos.xlsx",
-        usecols=[0, 2, 3, 4, 5, 13, 20, 33, 34, 35, 47]
+        usecols=[0, 2, 3, 4, 5, 13, 20, 32, 33, 34, 35, 37, 38, 47]
     )
     df.columns = [
         COL_OPP_ID,
         "Cliente", COL_DOC, COL_CONC, COL_VEND,
         "Data de Criação", "Razão do Status",
-        "Tipo de Produto", "Produto", "Família", "Tipo de Adicional",
+        "Valor Total", "Tipo de Produto", "Produto", "Família",
+        "Preço por Unidade", "Quantidade", "Tipo de Adicional",
     ]
-    df[COL_OPP_ID] = df[COL_OPP_ID].astype(str).str.strip()
+    # O relatório vem agrupado por oportunidade: o ID só aparece na primeira
+    # linha e as demais linhas de produto vêm em branco. O ffill reconstitui
+    # a qual oportunidade cada produto pertence.
+    df[COL_OPP_ID] = df[COL_OPP_ID].ffill().astype(str).str.strip()
+
+    # "Valor Total" é da OPORTUNIDADE (repetido em cada linha de produto);
+    # somá-lo por linha duplica. O valor da linha é preço x quantidade.
+    df["Preço por Unidade"] = pd.to_numeric(df["Preço por Unidade"], errors="coerce").fillna(0)
+    df["Quantidade"]        = pd.to_numeric(df["Quantidade"], errors="coerce").fillna(0)
+    df["Valor Total"]       = pd.to_numeric(df["Valor Total"], errors="coerce").fillna(0)
+    df["Valor do Item"]     = df["Preço por Unidade"] * df["Quantidade"]
     df[COL_VEND]          = normalizar(df[COL_VEND])
     df["Data de Criação"] = pd.to_datetime(df["Data de Criação"], dayfirst=True, errors="coerce")
     return df
@@ -908,8 +919,15 @@ def card(t, v):
 # =========================
 # HELPER: tabela com filtros por coluna (AgGrid)
 # =========================
-def _tabela(df, key, height=None, show_index=False, pct_cols=()):
-    """Exibe DataFrame com filtros Excel-like clicáveis nos cabeçalhos e botão de download."""
+def _tabela(df, key, height=None, show_index=False, pct_cols=(),
+            tooltip_col=None, tooltip_on=()):
+    """
+    Exibe DataFrame com filtros Excel-like clicáveis nos cabeçalhos e botão de download.
+
+    tooltip_col: coluna cujo conteúdo aparece ao passar o mouse. Ela fica
+                 oculta na grade (mas segue no CSV baixado).
+    tooltip_on:  colunas que exibem esse tooltip; vazio = todas.
+    """
     from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
     _df = df.reset_index() if show_index else df.reset_index(drop=True)
 
@@ -939,6 +957,19 @@ def _tabela(df, key, height=None, show_index=False, pct_cols=()):
                 type=["numericColumn", "numericFilter"],
                 valueFormatter="value != null ? parseFloat(value).toFixed(1) + '%' : ''",
             )
+
+    if tooltip_col and tooltip_col in _df.columns:
+        # Tooltip nativo do navegador: respeita quebras de linha do texto
+        gb.configure_grid_options(
+            enableBrowserTooltips=True,
+            tooltipShowDelay=200,
+        )
+        gb.configure_column(tooltip_col, hide=True)
+        alvos = [c for c in (tooltip_on or _df.columns) if c != tooltip_col]
+        for col in alvos:
+            if col in _df.columns:
+                gb.configure_column(col, tooltipField=tooltip_col)
+
     kw = {"height": height} if height else {}
     AgGrid(
         _df,
@@ -1219,6 +1250,40 @@ with tab1:
         df_detail["Criada Por"].fillna("")
     )
 
+    # ── Produtos de cada oportunidade (tooltip ao passar o mouse) ─────
+    # O relatório de produtos tem uma linha por item; agrupa pelo ID da
+    # oportunidade para montar a lista exibida no hover.
+    _itens = rel_prod.copy()
+
+    def _texto(serie):
+        """Normaliza para string, tratando NA e placeholders como ausente."""
+        s = serie.astype("string").str.strip()
+        return s.mask(s.isin(["", "nan", "None", "<NA>"]))
+
+    # Máquina preenche "Produto"; implemento/acessório preenche "Tipo de
+    # Adicional" — um deles está vazio em cada linha.
+    _nome_item = (
+        _texto(_itens["Produto"])
+        .fillna(_texto(_itens["Tipo de Adicional"]))
+        .fillna("Item sem descrição")
+    )
+    _itens["_linha"] = (
+        "• "
+        + _itens["Quantidade"].fillna(0).astype(int).astype("string") + "x "
+        + _nome_item
+        + _itens["Valor do Item"].apply(
+            lambda v: f" — R$ {round(v):,}".replace(",", ".") if v else ""
+        ).astype("string")
+    )
+    _produtos_por_opp = (
+        _itens.groupby(COL_OPP_ID)["_linha"]
+        .apply(lambda s: "\n".join(s))
+    )
+    df_detail["Produtos"] = (
+        df_detail[COL_OPP_ID].map(_produtos_por_opp)
+        .fillna("Sem produto cadastrado nesta oportunidade")
+    )
+
     tabela_opp = (
         df_detail[
             [
@@ -1233,6 +1298,7 @@ with tab1:
                 "Valor Total",
                 "Dias desde Criação",
                 "Criador",
+                "Produtos",
             ]
         ]
         .rename(columns={
@@ -1247,7 +1313,10 @@ with tab1:
         )
     )
 
-    _tabela(tabela_opp, key="tv_opp")
+    st.caption(
+        "💡 Passe o mouse sobre uma linha para ver os produtos da oportunidade."
+    )
+    _tabela(tabela_opp, key="tv_opp", tooltip_col="Produtos")
 
     # =========================
     # TAB 2 - MAPA MUNICÍPIO
@@ -3179,36 +3248,46 @@ with tab4:
                     ("Produtos", "Produto"),
                     ("Tipos de Adicional", "Tipo de Adicional"),
                 ]:
-                    _vc = (
-                        rel_funil[_coluna]
-                        .dropna()
-                        .astype(str)
-                        .str.strip()
-                        .replace("", pd.NA)
-                        .dropna()
-                        .value_counts()
-                    )
+                    _b = rel_funil[[_coluna, "Valor do Item"]].copy()
+                    _b[_coluna] = _b[_coluna].astype(str).str.strip()
+                    _b = _b[_b[_coluna].notna() & ~_b[_coluna].isin(["", "nan", "None"])]
+
                     st.markdown(f"**{_titulo}**")
-                    if _vc.empty:
+                    if _b.empty:
                         st.caption("Nenhum registro para os filtros atuais.")
-                    else:
-                        _tab = _vc.rename_axis(_coluna).reset_index(name="Qtd")
-                        _tab["%"] = (
-                            _tab["Qtd"] / _tab["Qtd"].sum() * 100
-                        ).round(1)
-                        st.dataframe(
-                            _tab,
-                            hide_index=True,
-                            use_container_width=True,
-                            height=min(320, 38 + 35 * len(_tab)),
-                            column_config={
-                                "Qtd": st.column_config.NumberColumn(width="small"),
-                                "%":   st.column_config.NumberColumn(
-                                    format="%.1f%%", width="small"
-                                ),
-                            },
-                        )
-                        st.caption(f"Total: {format_br(int(_tab['Qtd'].sum()))}")
+                        continue
+
+                    # Volume financeiro = preço x quantidade da linha de produto
+                    # (Valor Total é da oportunidade e duplicaria entre produtos).
+                    _tab = (
+                        _b.groupby(_coluna)
+                        .agg(Qtd=("Valor do Item", "size"),
+                             Volume=("Valor do Item", "sum"))
+                        .reset_index()
+                        .sort_values("Qtd", ascending=False)
+                    )
+                    _tab["%"] = (_tab["Qtd"] / _tab["Qtd"].sum() * 100).round(1)
+                    _tab = _tab[[_coluna, "Qtd", "%", "Volume"]]
+
+                    st.dataframe(
+                        _tab,
+                        hide_index=True,
+                        use_container_width=True,
+                        height=min(320, 38 + 35 * len(_tab)),
+                        column_config={
+                            "Qtd": st.column_config.NumberColumn(width="small"),
+                            "%":   st.column_config.NumberColumn(
+                                format="%.1f%%", width="small"
+                            ),
+                            "Volume": st.column_config.NumberColumn(
+                                "Volume R$", format="R$ %.0f"
+                            ),
+                        },
+                    )
+                    st.caption(
+                        f"Total: {format_br(int(_tab['Qtd'].sum()))} itens · "
+                        f"R$ {format_br(int(_tab['Volume'].sum()))}"
+                    )
 
 # =========================
 # PAINEL ADMINISTRAÇÃO
