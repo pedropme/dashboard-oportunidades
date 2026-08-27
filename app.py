@@ -365,7 +365,7 @@ def load_territorio():
 @st.cache_data
 def _load_territorio(_assinatura):
     df = pd.read_excel("dados/territorio.xlsx")
-    for col in ["NOME CRM", "NOME BI", "Filial", "Região", "Marca"]:
+    for col in ["NOME CRM", "NOME BI", "Filial", "Região", "Marca", "UF"]:
         df[col] = normalizar(df[col])
     return df
 
@@ -551,12 +551,14 @@ dados_vendedor = (
             "NOME CRM",
             "NOME BI",
             "Filial",
-            "Região"
+            "Região",
+            "UF"
         ]
     ]
     .drop_duplicates(subset=["NOME CRM"])
     .rename(columns={
-        "NOME CRM": COL_VEND
+        "NOME CRM": COL_VEND,
+        "UF": "Estado"
     })
 )
 
@@ -698,6 +700,10 @@ if _filiais_restritas:
         "Região",
         ["Todas"] + sorted(dashboard["Região"].dropna().unique())
     )
+    estado = st.sidebar.selectbox(
+        "Estado",
+        ["Todos"] + sorted(dashboard["Estado"].dropna().unique())
+    )
 elif _regiao_restrita:
     # dashboard já pré-filtrado para esta região
     regiao = _regiao_restrita
@@ -712,6 +718,10 @@ elif _regiao_restrita:
     filial = st.sidebar.selectbox(
         "Filial",
         ["Todas"] + sorted(dashboard["Filial"].dropna().unique())
+    )
+    estado = st.sidebar.selectbox(
+        "Estado",
+        ["Todos"] + sorted(dashboard["Estado"].dropna().unique())
     )
 else:
     regiao = st.sidebar.selectbox(
@@ -732,7 +742,16 @@ else:
         )
     )
 
-# base filtrada até filial/região
+    estado = st.sidebar.selectbox(
+        "Estado",
+        ["Todos"] + sorted(
+            dashboard["Estado"]
+            .dropna()
+            .unique()
+        )
+    )
+
+# base filtrada até filial/região/estado
 base_filtro_vendedor = dashboard.copy()
 
 if regiao != "Todas":
@@ -743,6 +762,11 @@ if regiao != "Todas":
 if filial != "Todas":
     base_filtro_vendedor = base_filtro_vendedor[
         base_filtro_vendedor["Filial"] == filial
+    ]
+
+if estado != "Todos":
+    base_filtro_vendedor = base_filtro_vendedor[
+        base_filtro_vendedor["Estado"] == estado
     ]
 
 # ── Filtro de status (Ativos / Inativos / Todos) ─────────────────────────────
@@ -830,6 +854,11 @@ if regiao != "Todas":
 if filial != "Todas":
     df_base = df_base[
         df_base["Filial"] == filial
+    ]
+
+if estado != "Todos":
+    df_base = df_base[
+        df_base["Estado"] == estado
     ]
 
 if vendedor != "Todos":
@@ -1520,10 +1549,13 @@ with tab1:
                 ].copy()
 
             # mapa leve
+            # OpenStreetMap: CartoDB passou a exigir API key no endpoint
+            # gratuito (basemaps.cartocdn.com/light_all), causando o erro
+            # "api key required" no mapa.
             m = folium.Map(
                 location=[-15, -55],
                 zoom_start=4,
-                tiles="cartodbpositron"
+                tiles="OpenStreetMap"
             )
             # =========================
             # MOSTRAR MUNICÍPIOS
@@ -1744,7 +1776,7 @@ with tab1:
 
             # Território filtrado pelos seletores da sidebar
             _mp_ter = (
-                territorio[["NOME BI", "NOME CRM", "Código IBGE", "Filial", "Região"]]
+                territorio[["NOME BI", "NOME CRM", "Código IBGE", "Filial", "Região", "UF"]]
                 .drop_duplicates(subset=["NOME BI", "Código IBGE"])
                 .copy()
             )
@@ -1756,6 +1788,8 @@ with tab1:
                 _mp_ter = _mp_ter[_mp_ter["Filial"].isin(_filiais_restritas)]
             elif filial != "Todas":
                 _mp_ter = _mp_ter[_mp_ter["Filial"] == filial]
+            if estado != "Todos":
+                _mp_ter = _mp_ter[_mp_ter["UF"] == estado]
             if vendedor != "Todos":
                 _mp_ter = _mp_ter[_mp_ter["NOME CRM"] == vendedor]
 
@@ -1836,7 +1870,7 @@ with tab1:
                     return "#C62828"                  # vermelho
 
                 m = folium.Map(
-                    location=[-15, -55], zoom_start=4, tiles="cartodbpositron"
+                    location=[-15, -55], zoom_start=4, tiles="OpenStreetMap"
                 )
 
                 for _, _row in _mapa_mp.iterrows():
@@ -1916,7 +1950,8 @@ with tab3:
             [
                 "NOME BI",
                 "Filial",
-                "Região"
+                "Região",
+                "UF"
             ]
         ]
         .drop_duplicates(subset=["NOME BI"])
@@ -1946,6 +1981,11 @@ with tab3:
     elif filial != "Todas":
         matriz = matriz[
             matriz["Filial"] == filial
+        ]
+
+    if estado != "Todos":
+        matriz = matriz[
+            matriz["UF"] == estado
         ]
 
     # O sidebar usa NOME CRM; a base de metas usa NOME BI.
@@ -2068,6 +2108,12 @@ with tab3:
             _ml = _ml[_ml["FILIAL_NOME"].isin(_filiais_restritas)]
         elif filial != "Todas":
             _ml = _ml[_ml["FILIAL_NOME"] == filial]
+
+        if estado != "Todos":
+            # metas_loja/orçamento não trazem UF direto; usa o território
+            # (Filial -> UF é 1:1) para mapear FILIAL_NOME -> Estado.
+            _filial_to_uf = dict(zip(territorio["Filial"], territorio["UF"]))
+            _ml = _ml[_ml["FILIAL_NOME"].map(_filial_to_uf) == estado]
 
         lista_lojas = sorted(_ml["NOME"].dropna().unique().tolist())
 
