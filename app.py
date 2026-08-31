@@ -330,6 +330,11 @@ def classificar_produto(row):
     if "COLHEITADEIRA"        in de_para:  return "COLHEITADEIRA"
     if "DRONE"                in tipo:     return "DRONE"
     if "RECOLHEDORA AUTOMOTRIZ" in tipo:   return "RECOLHEDORA AUTOMOTRIZ"
+    # Meta "CR" da linha de café = Arruador Soprador (ASM-1S / ASM-2S).
+    # A Colhedeira Automotriz K.3000 (Grupo Modelo AUTOPROPELIDO) NÃO entra
+    # aqui: terá meta própria de colhedeira autopropelida no futuro, e até
+    # lá fica sem classificação de propósito.
+    if "ARRUADOR"             in grupo:    return "CR"
     if "MASTER CAFE"          in grupo:    return "CR"
     if "2 CR"                 in grupo:    return "2 CR"
     if "MASTER GRAOS"         in grupo:    return "MASTER GRAOS"
