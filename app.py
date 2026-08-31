@@ -308,10 +308,18 @@ def classificar_produto(row):
     familia  = row["Familia"]
     tipo     = row["Tipo Produto"]
     grupo    = row["Grupo Modelo"]
+    regiao   = row["Regiao"]
     # "Usado" vem em De Para ("USADOS NH" / "USADOS OUTRAS MARCAS"), nunca
     # na Familia, e tem precedência sobre o tipo de máquina: a meta de
     # USADOS é por faturamento e independe de ser plataforma, trator etc.
-    if "USADO"                in de_para:  return "USADOS"
+    #
+    # Só no CERRADO existe meta de USADOS. No SUDESTE não há essa meta: o
+    # equipamento usado conta na categoria dele, como se fosse novo (trator
+    # usado -> TRATOR). Essas linhas caem nas regras abaixo e, quando o
+    # De Para não revela a categoria, são resolvidas pela Família em
+    # _load_vendas_e_realizado.
+    if "USADO" in de_para and "SUDESTE" not in regiao:
+        return "USADOS"
     if "TRATOR"               in de_para:  return "TRATOR"
     if "VEICULOS OFF ROAD"    in segmento: return "VEICULOS OFF ROAD"
     if "IMPLEMENTO"           in familia:  return "IMPLEMENTO"
@@ -388,10 +396,31 @@ def load_vendas_e_realizado():
 @st.cache_data
 def _load_vendas_e_realizado(_assinatura):
     df = pd.read_excel("dados/vendas.xlsx")
-    for col in ["Segmento Maq", "Familia", "Tipo Produto",
-                "Grupo Modelo", "Vendedor", "Calc dim De Para Familia 2"]:
+    for col in ["Segmento Maq", "Familia", "Tipo Produto", "Grupo Modelo",
+                "Vendedor", "Calc dim De Para Familia 2", "Regiao", "Modelo"]:
         df[col] = normalizar(df[col].astype(str))
     df["PRODUTO_MATRIZ"]   = df.apply(classificar_produto, axis=1)
+
+    # ── Usados do Sudeste que as regras não classificaram ────────────────
+    # No Sudeste o usado entra como novo, mas o De Para diz "USADOS NH" e
+    # não revela a categoria (ex.: família TL = trator). Deduz a categoria
+    # a partir de como a mesma Família aparece nas vendas novas.
+    _usado   = df["Calc dim De Para Familia 2"].str.contains("USADO", na=False)
+    _sudeste = df["Regiao"].str.contains("SUDESTE", na=False)
+    _pendente = _usado & _sudeste & df["PRODUTO_MATRIZ"].isna()
+    if _pendente.any():
+        _mapa_familia = (
+            df.loc[~_usado & df["PRODUTO_MATRIZ"].notna()]
+            .groupby("Familia")["PRODUTO_MATRIZ"]
+            .agg(lambda s: s.mode().iat[0])
+        )
+        df.loc[_pendente, "PRODUTO_MATRIZ"] = (
+            df.loc[_pendente, "Familia"].map(_mapa_familia)
+        )
+        # Família sem equivalente novo (ex.: marca concorrente): usa o Modelo
+        _resta = _usado & _sudeste & df["PRODUTO_MATRIZ"].isna()
+        df.loc[_resta & df["Modelo"].str.contains("TRATOR", na=False),
+               "PRODUTO_MATRIZ"] = "TRATOR"
     df["Calc Mes"]         = df["Calc Mes"].astype(str).str.strip()
     df["MES"]              = pd.to_numeric(df["Calc Mes"], errors="coerce")
     df["Ano"]              = df["Ano"].astype(str).str.strip()
@@ -1783,9 +1812,9 @@ with tab1:
             _mp_metas["CONSULTOR"] = normalizar(_mp_metas["CONSULTOR"])
             _mp_metas["PRODUTO"]   = normalizar(_mp_metas["PRODUTO"])
             _mp_metas["STATUS"]    = normalizar(_mp_metas["STATUS"])
-            _mp_metas = _mp_metas[
-                _mp_metas["STATUS"].str.contains("ATIVO", na=False)
-            ].copy()
+            # Igualdade exata: "INATIVO" contém "ATIVO", então str.contains
+            # deixaria os inativos passarem.
+            _mp_metas = _mp_metas[_mp_metas["STATUS"] == "ATIVO"].copy()
 
             # Território filtrado pelos seletores da sidebar
             _mp_ter = (
@@ -1950,10 +1979,9 @@ with tab3:
     # =====================================================
     # SOMENTE ATIVOS
     # =====================================================
-    metas = metas[
-        metas["STATUS"]
-        .str.contains("ATIVO", na=False)
-    ].copy()
+    # Igualdade exata: "INATIVO" contém "ATIVO" como substring, então
+    # str.contains("ATIVO") não filtrava nada e os inativos apareciam.
+    metas = metas[metas["STATUS"] == "ATIVO"].copy()
 
     # =====================================================
     # BASE TERRITÓRIO
