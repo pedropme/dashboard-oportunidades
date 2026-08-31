@@ -298,23 +298,36 @@ def normalizar(col):
 # CLASSIFICAÇÃO PRODUTOS
 # =========================
 def classificar_produto(row):
+    """
+    Mapeia a linha de venda para o nome do produto usado nas METAS.
+    Retornar None faz a linha ser descartada do realizado, então todo
+    produto que existe em metas.xlsx precisa ter uma regra aqui.
+    """
     de_para  = row["Calc dim De Para Familia 2"]
     segmento = row["Segmento Maq"]
     familia  = row["Familia"]
     tipo     = row["Tipo Produto"]
     grupo    = row["Grupo Modelo"]
+    # "Usado" vem em De Para ("USADOS NH" / "USADOS OUTRAS MARCAS"), nunca
+    # na Familia, e tem precedência sobre o tipo de máquina: a meta de
+    # USADOS é por faturamento e independe de ser plataforma, trator etc.
+    if "USADO"                in de_para:  return "USADOS"
     if "TRATOR"               in de_para:  return "TRATOR"
     if "VEICULOS OFF ROAD"    in segmento: return "VEICULOS OFF ROAD"
     if "IMPLEMENTO"           in familia:  return "IMPLEMENTO"
-    if "USADO"                in familia:  return "USADOS"
     if "EMPILHADEIRA"         in familia:  return "EMPILHADEIRA"
     if "PLATAFORMA"           in familia:  return "PLATAFORMA"
+    # Colheitadeira de grão (modelos CR*). Não confundir com a meta "CR",
+    # que é da linha de café (mesmos 6 consultores da meta "2 CR").
+    if "COLHEITADEIRA"        in de_para:  return "COLHEITADEIRA"
     if "DRONE"                in tipo:     return "DRONE"
     if "RECOLHEDORA AUTOMOTRIZ" in tipo:   return "RECOLHEDORA AUTOMOTRIZ"
     if "MASTER CAFE"          in grupo:    return "CR"
     if "2 CR"                 in grupo:    return "2 CR"
     if "MASTER GRAOS"         in grupo:    return "MASTER GRAOS"
-    if "PULVERIZADOR"         in grupo:    return "PULVERIZADOR"
+    # De Para distingue o autopropelido do pulverizador implemento (que
+    # já foi capturado acima). O nome precisa bater com o das metas.
+    if "PULVERIZADOR AUTOPROPELIDO" in de_para: return "PULVERIZADOR AUTOPROPELIDO"
     if "PLANTADEIRA"          in grupo:    return "PLANTADEIRA"
     return None
 
