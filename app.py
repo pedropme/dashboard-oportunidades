@@ -399,6 +399,37 @@ def _load_territorio(_assinatura):
         df[col] = normalizar(df[col])
     return df
 
+def _mapa_filial_consultor():
+    """
+    (consultor -> nome da filial, código -> nome da filial).
+
+    A filial de cada vendedor é a que está em metas.xlsx, que a registra por
+    código (LEM, BJS...). O nome usado no resto do app vem do território; o
+    de/para entre os dois é deduzido cruzando as duas bases pelo consultor,
+    então não precisa manutenção quando surgir filial nova.
+    """
+    _mt = pd.read_excel("dados/metas.xlsx", usecols=["CONSULTOR", "FILIAL"])
+    _mt["CONSULTOR"] = normalizar(_mt["CONSULTOR"].astype(str))
+    _mt["FILIAL"]    = normalizar(_mt["FILIAL"].astype(str))
+    _tr = pd.read_excel("dados/territorio.xlsx", usecols=["NOME BI", "Filial"])
+    _tr["NOME BI"] = normalizar(_tr["NOME BI"].astype(str))
+    _tr["Filial"]  = normalizar(_tr["Filial"].astype(str))
+
+    cod_para_nome = (
+        _mt.drop_duplicates()
+        .merge(_tr.drop_duplicates(subset=["NOME BI"]),
+               left_on="CONSULTOR", right_on="NOME BI", how="inner")
+        .groupby("FILIAL")["Filial"]
+        .agg(lambda s: s.mode().iat[0])
+        .to_dict()
+    )
+    _mt = _mt.drop_duplicates(subset=["CONSULTOR"])
+    filial_do_consultor = dict(
+        zip(_mt["CONSULTOR"], _mt["FILIAL"].map(cod_para_nome))
+    )
+    return filial_do_consultor, cod_para_nome
+
+
 def load_vendas_e_realizado():
     return _load_vendas_e_realizado(
         _sig("dados/vendas.xlsx", ARQ_CONSORCIO,
@@ -440,14 +471,13 @@ def _load_vendas_e_realizado(_assinatura):
     df["VALOR_REALIZADO"]  = df["Quantidade"].astype(float)
     mask_v = df["PRODUTO_MATRIZ"].isin(["IMPLEMENTO", "USADOS"])
     df.loc[mask_v, "VALOR_REALIZADO"] = df.loc[mask_v, "Vl NFVenda"]
-    # FILIAL sai da Empresa da nota, não do território do vendedor: 17% das
-    # linhas são de vendedores fora do território (ex-funcionários, gente sem
-    # área) e sumiam do total da loja. Onde as duas fontes coexistem elas
-    # concordam em 100% das 2.317 linhas, então isso só recupera o que faltava.
-    df["FILIAL"] = (
-        normalizar(df["Empresa"].astype(str))
-        .str.replace(r"^PME\s*-\s*", "", regex=True).str.strip()
-    )
+    # FILIAL = a filial a que o VENDEDOR pertence, conforme metas.xlsx —
+    # não a filial de cada nota. Um vendedor que fature por outra loja
+    # continua somando na dele. Quem não está em metas.xlsx (ex.: gerente de
+    # peças) fica sem filial e sai do total da loja de propósito; o realizado
+    # individual não é afetado, pois é chaveado por consultor.
+    _filial_do_vendedor, _cod_para_nome = _mapa_filial_consultor()
+    df["FILIAL"] = df["Vendedor"].map(_filial_do_vendedor)
     realizado = (
         df[df["PRODUTO_MATRIZ"].notna()]
         .groupby(["Vendedor", "PRODUTO_MATRIZ", "MES", "FILIAL"])["VALOR_REALIZADO"]
@@ -465,25 +495,13 @@ def _load_vendas_e_realizado(_assinatura):
         df_cons = pd.read_excel(ARQ_CONSORCIO, sheet_name="Vendas")
         df_cons["CONSULTOR"] = normalizar(df_cons["CONSULTOR"].astype(str))
         df_cons["PRODUTO"]   = normalizar(df_cons["PRODUTO"].astype(str))
-        # FILIAL do consórcio vem em código (LEM, BJS...). Converte para o
-        # nome usado no restante do app cruzando metas.xlsx com o território
-        # pelo consultor — assim o mapa se mantém sozinho.
+        # O consórcio traz a filial na própria planilha, em código (LEM,
+        # BJS...). Vale como fonte para quem não está em metas.xlsx.
         df_cons["FILIAL"] = normalizar(df_cons["FILIAL"].astype(str))
-        _mt = pd.read_excel("dados/metas.xlsx", usecols=["CONSULTOR", "FILIAL"])
-        _mt["CONSULTOR"] = normalizar(_mt["CONSULTOR"].astype(str))
-        _mt["FILIAL"]    = normalizar(_mt["FILIAL"].astype(str))
-        _tr = pd.read_excel("dados/territorio.xlsx", usecols=["NOME BI", "Filial"])
-        _tr["NOME BI"] = normalizar(_tr["NOME BI"].astype(str))
-        _tr["Filial"]  = normalizar(_tr["Filial"].astype(str))
-        _cod_para_nome = (
-            _mt.drop_duplicates()
-            .merge(_tr.drop_duplicates(subset=["NOME BI"]),
-                   left_on="CONSULTOR", right_on="NOME BI", how="inner")
-            .groupby("FILIAL")["Filial"]
-            .agg(lambda s: s.mode().iat[0])
-            .to_dict()
+        df_cons["FILIAL"] = (
+            df_cons["CONSULTOR"].map(_filial_do_vendedor)
+            .fillna(df_cons["FILIAL"].map(_cod_para_nome))
         )
-        df_cons["FILIAL"] = df_cons["FILIAL"].map(_cod_para_nome).fillna(df_cons["FILIAL"])
         df_cons_long = df_cons.melt(
             id_vars=["CONSULTOR", "PRODUTO", "FILIAL"],
             value_vars=list(_MES_MAP.keys()),
