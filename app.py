@@ -400,7 +400,10 @@ def _load_territorio(_assinatura):
     return df
 
 def load_vendas_e_realizado():
-    return _load_vendas_e_realizado(_sig("dados/vendas.xlsx", ARQ_CONSORCIO))
+    return _load_vendas_e_realizado(
+        _sig("dados/vendas.xlsx", ARQ_CONSORCIO,
+             "dados/metas.xlsx", "dados/territorio.xlsx")
+    )
 
 @st.cache_data
 def _load_vendas_e_realizado(_assinatura):
@@ -437,12 +440,20 @@ def _load_vendas_e_realizado(_assinatura):
     df["VALOR_REALIZADO"]  = df["Quantidade"].astype(float)
     mask_v = df["PRODUTO_MATRIZ"].isin(["IMPLEMENTO", "USADOS"])
     df.loc[mask_v, "VALOR_REALIZADO"] = df.loc[mask_v, "Vl NFVenda"]
+    # FILIAL sai da Empresa da nota, não do território do vendedor: 17% das
+    # linhas são de vendedores fora do território (ex-funcionários, gente sem
+    # área) e sumiam do total da loja. Onde as duas fontes coexistem elas
+    # concordam em 100% das 2.317 linhas, então isso só recupera o que faltava.
+    df["FILIAL"] = (
+        normalizar(df["Empresa"].astype(str))
+        .str.replace(r"^PME\s*-\s*", "", regex=True).str.strip()
+    )
     realizado = (
         df[df["PRODUTO_MATRIZ"].notna()]
-        .groupby(["Vendedor", "PRODUTO_MATRIZ", "MES"])["VALOR_REALIZADO"]
+        .groupby(["Vendedor", "PRODUTO_MATRIZ", "MES", "FILIAL"])["VALOR_REALIZADO"]
         .sum().reset_index()
     )
-    realizado.columns = ["CONSULTOR", "PRODUTO", "MES", "REALIZADO"]
+    realizado.columns = ["CONSULTOR", "PRODUTO", "MES", "FILIAL", "REALIZADO"]
 
     # ── Consórcio: base manual, realizado já agregado por consultor/mês ──
     # Só a ausência do arquivo é tolerada. Erro de formato propaga de
@@ -454,8 +465,27 @@ def _load_vendas_e_realizado(_assinatura):
         df_cons = pd.read_excel(ARQ_CONSORCIO, sheet_name="Vendas")
         df_cons["CONSULTOR"] = normalizar(df_cons["CONSULTOR"].astype(str))
         df_cons["PRODUTO"]   = normalizar(df_cons["PRODUTO"].astype(str))
+        # FILIAL do consórcio vem em código (LEM, BJS...). Converte para o
+        # nome usado no restante do app cruzando metas.xlsx com o território
+        # pelo consultor — assim o mapa se mantém sozinho.
+        df_cons["FILIAL"] = normalizar(df_cons["FILIAL"].astype(str))
+        _mt = pd.read_excel("dados/metas.xlsx", usecols=["CONSULTOR", "FILIAL"])
+        _mt["CONSULTOR"] = normalizar(_mt["CONSULTOR"].astype(str))
+        _mt["FILIAL"]    = normalizar(_mt["FILIAL"].astype(str))
+        _tr = pd.read_excel("dados/territorio.xlsx", usecols=["NOME BI", "Filial"])
+        _tr["NOME BI"] = normalizar(_tr["NOME BI"].astype(str))
+        _tr["Filial"]  = normalizar(_tr["Filial"].astype(str))
+        _cod_para_nome = (
+            _mt.drop_duplicates()
+            .merge(_tr.drop_duplicates(subset=["NOME BI"]),
+                   left_on="CONSULTOR", right_on="NOME BI", how="inner")
+            .groupby("FILIAL")["Filial"]
+            .agg(lambda s: s.mode().iat[0])
+            .to_dict()
+        )
+        df_cons["FILIAL"] = df_cons["FILIAL"].map(_cod_para_nome).fillna(df_cons["FILIAL"])
         df_cons_long = df_cons.melt(
-            id_vars=["CONSULTOR", "PRODUTO"],
+            id_vars=["CONSULTOR", "PRODUTO", "FILIAL"],
             value_vars=list(_MES_MAP.keys()),
             var_name="MES_STR",
             value_name="REALIZADO",
@@ -467,7 +497,7 @@ def _load_vendas_e_realizado(_assinatura):
         # != 0 e não > 0: estorno de cota vem negativo e precisa abater
         df_cons_agg = (
             df_cons_long[df_cons_long["REALIZADO"] != 0]
-            .groupby(["CONSULTOR", "PRODUTO", "MES"])["REALIZADO"]
+            .groupby(["CONSULTOR", "PRODUTO", "MES", "FILIAL"])["REALIZADO"]
             .sum()
             .reset_index()
         )
@@ -2123,17 +2153,16 @@ with tab3:
         # Fonte de metas: LOJA ou ORÇAMENTO conforme toggle 2
         _fonte_loja = metas_orcamento if _tipo_meta == "Orçamento" else metas_loja
 
-        # Realizado agregado por filial/loja (usando nome do território)
-        _ter_map = (
-            territorio[["NOME BI", "Filial"]]
-            .drop_duplicates(subset=["NOME BI"])
-        )
+        # Realizado agregado por filial/loja.
+        # A filial já vem no realizado (da Empresa da nota, e do código de
+        # filial no caso do consórcio). Antes era deduzida do território do
+        # vendedor, o que descartava quem não tem área cadastrada.
         _real_loja = (
             realizado
-            .merge(_ter_map, left_on="CONSULTOR", right_on="NOME BI", how="left")
-            .groupby(["Filial", "PRODUTO", "MES"])["REALIZADO"]
+            .groupby(["FILIAL", "PRODUTO", "MES"])["REALIZADO"]
             .sum()
             .reset_index()
+            .rename(columns={"FILIAL": "Filial"})
         )
 
         # Mapeamento NOME_LOJA → FILIAL_NOME (nome do território)
