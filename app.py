@@ -279,6 +279,10 @@ COL_VEND = "Vendedor"
 # "Identificador da Oportunidade" — permite ligar produtos à oportunidade.
 COL_OPP_ID = "ID Oportunidade"
 
+# Consórcio é preenchido à mão e fica em arquivo próprio: vendas.xlsx é
+# recriado do zero pelo download diário, o que apagaria uma aba manual.
+ARQ_CONSORCIO = "dados/vendas - Consórcio.xlsx"
+
 # =========================
 # NORMALIZAÇÃO
 # =========================
@@ -396,7 +400,7 @@ def _load_territorio(_assinatura):
     return df
 
 def load_vendas_e_realizado():
-    return _load_vendas_e_realizado(_sig("dados/vendas.xlsx"))
+    return _load_vendas_e_realizado(_sig("dados/vendas.xlsx", ARQ_CONSORCIO))
 
 @st.cache_data
 def _load_vendas_e_realizado(_assinatura):
@@ -440,32 +444,34 @@ def _load_vendas_e_realizado(_assinatura):
     )
     realizado.columns = ["CONSULTOR", "PRODUTO", "MES", "REALIZADO"]
 
-    # ── Aba Consórcio: realizado já agregado por consultor/mês ───────────
+    # ── Consórcio: base manual, realizado já agregado por consultor/mês ──
+    # Só a ausência do arquivo é tolerada. Erro de formato propaga de
+    # propósito: um "except: pass" aqui já escondeu a perda do consórcio
+    # inteiro quando o download diário apagou a aba que ficava no vendas.xlsx.
     _MES_MAP = {"JAN":1,"FEV":2,"MAR":3,"ABR":4,"MAI":5,"JUN":6,
                 "JUL":7,"AGO":8,"SET":9,"OUT":10,"NOV":11,"DEZ":12}
-    try:
-        df_cons = pd.read_excel("dados/vendas.xlsx", sheet_name="Consórcio")
+    if os.path.exists(ARQ_CONSORCIO):
+        df_cons = pd.read_excel(ARQ_CONSORCIO, sheet_name="Vendas")
         df_cons["CONSULTOR"] = normalizar(df_cons["CONSULTOR"].astype(str))
+        df_cons["PRODUTO"]   = normalizar(df_cons["PRODUTO"].astype(str))
         df_cons_long = df_cons.melt(
-            id_vars=["CONSULTOR"],
+            id_vars=["CONSULTOR", "PRODUTO"],
             value_vars=list(_MES_MAP.keys()),
             var_name="MES_STR",
             value_name="REALIZADO",
         )
-        df_cons_long["MES"]     = df_cons_long["MES_STR"].map(_MES_MAP)
-        df_cons_long["PRODUTO"] = "CONSORCIO"
+        df_cons_long["MES"] = df_cons_long["MES_STR"].map(_MES_MAP)
         df_cons_long["REALIZADO"] = pd.to_numeric(
             df_cons_long["REALIZADO"], errors="coerce"
         ).fillna(0)
+        # != 0 e não > 0: estorno de cota vem negativo e precisa abater
         df_cons_agg = (
-            df_cons_long[df_cons_long["REALIZADO"] > 0]
+            df_cons_long[df_cons_long["REALIZADO"] != 0]
             .groupby(["CONSULTOR", "PRODUTO", "MES"])["REALIZADO"]
             .sum()
             .reset_index()
         )
         realizado = pd.concat([realizado, df_cons_agg], ignore_index=True)
-    except Exception:
-        pass  # aba ausente: continua sem consórcio
 
     return df, realizado
 

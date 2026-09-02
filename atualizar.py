@@ -22,6 +22,7 @@ BASES_MANUAIS = [
     ("Clientes",   "dados/clientes.xlsx"),
     ("Metas",      "dados/metas.xlsx"),
     ("Território", "dados/territorio.xlsx"),
+    ("Consórcio",  "dados/vendas - Consórcio.xlsx"),
 ]
 
 
@@ -62,9 +63,14 @@ def run_update():
 
             # ── 1. Conferência das bases manuais ──────────────────────────
             log("Conferindo bases atualizadas manualmente...")
+            # core.quotepath=false + utf-8: sem isso o git escapa acentos
+            # ("ConsÃ³rcio") e a base de Consórcio nunca casaria,
+            # aparecendo como "sem alterações" mesmo tendo mudado.
             r_mod = subprocess.run(
-                ["git", "status", "--short", "--", "dados/"],
-                cwd=PROJECT_DIR, capture_output=True, text=True
+                ["git", "-c", "core.quotepath=false",
+                 "status", "--short", "--", "dados/"],
+                cwd=PROJECT_DIR, capture_output=True,
+                text=True, encoding="utf-8", errors="replace"
             )
             _modificados = {
                 l[3:].strip().strip('"') for l in r_mod.stdout.splitlines() if l.strip()
