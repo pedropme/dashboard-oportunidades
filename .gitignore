@@ -7,6 +7,10 @@ dados/usuarios.json
 scripts/log_download.txt
 scripts/log_cnh.txt
 
+# Screenshots de diagnostico do baixar_cnh.py: sao recriados a cada
+# execucao e mostram a tela ja logada no portal — nao versionar.
+dados/_diag_*.png
+
 # Diagnosticos temporarios (nao versionar)
 scripts/_diagnostico_*.py
 scripts/_diag_*.log
