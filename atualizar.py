@@ -17,6 +17,13 @@ else:
 VENDAS_SCRIPT = os.path.join(PROJECT_DIR, "scripts", "baixar_vendas.py")
 CNH_SCRIPT    = os.path.join(PROJECT_DIR, "scripts", "baixar_cnh.py")
 
+# --auto: dispara a atualizacao sozinho ao abrir e fecha a janela sozinho ao
+# terminar. E o que a Tarefa Agendada usa - vendas + CNH + bases manuais +
+# git rodam numa unica execucao/um unico processo, em vez de duas tarefas
+# separadas (Vendas as 08:30, CNH as 12:00) que disputavam o mesmo
+# repositorio git entre si (corrida resolvida em 15/09/2026).
+AUTO_MODE = "--auto" in sys.argv
+
 # Bases que NÃO são baixadas automaticamente — atualizadas à mão pelo usuário.
 # São conferidas e enviadas junto com as demais no git add dados/.
 BASES_MANUAIS = [
@@ -262,6 +269,11 @@ def run_update():
                 text="Atualizar Dashboard" if ok_geral else "Atualizar Dashboard (com erros)"
             )
             output.config(state="disabled")
+            if AUTO_MODE:
+                # Roda pela Tarefa Agendada, sem ninguem pra clicar em "Sair":
+                # fecha sozinho depois de um tempo curto pra ficar legivel se
+                # a pessoa estiver na maquina, sem acumular janela todo dia.
+                root.after(20_000, root.destroy)
 
     threading.Thread(target=execute, daemon=True).start()
 
@@ -306,6 +318,9 @@ btn = tk.Button(
     activeforeground="#1e1e2e"
 )
 btn.pack(pady=16)
+
+if AUTO_MODE:
+    root.after(300, run_update)
 
 # Barra de progresso (indeterminate)
 style = ttk.Style()
