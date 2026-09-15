@@ -6,6 +6,7 @@ import os
 import sys
 import shutil
 from datetime import datetime
+import time
 
 # Localiza a pasta raiz do projeto (onde o .exe está)
 if getattr(sys, "frozen", False):
@@ -176,17 +177,33 @@ def run_update():
             else:
                 log("  Nenhuma alteração detectada na pasta dados/", "gray")
 
-            r = subprocess.run(
-                ["git", "add", "dados/"],
-                cwd=PROJECT_DIR,
-                capture_output=True,
-                text=True
-            )
-            if r.returncode == 0:
-                log("✓ Todos os arquivos da pasta dados/ preparados", "green")
-            else:
+            # add/commit/push com retry: essa execucao manual pode coincidir
+            # com a tarefa agendada do CNH (12:00), como aconteceu em
+            # 15/09/2026 — as duas disputando o mesmo .git/index.lock e
+            # depois o ref remoto. Sem isso, quem perde a corrida falha com
+            # um erro que parece grave mas e so uma janela transitoria.
+            tentativas, espera_s = 6, 3
+
+            def _git(cmd):
+                return subprocess.run(
+                    cmd, cwd=PROJECT_DIR, capture_output=True, text=True
+                )
+
+            ok_add = False
+            for tentativa in range(1, tentativas + 1):
+                r = _git(["git", "add", "dados/"])
+                if r.returncode == 0:
+                    ok_add = True
+                    break
+                if "index.lock" in (r.stderr or "") and tentativa < tentativas:
+                    log(f"  index.lock ocupado por outro processo git — "
+                        f"tentativa {tentativa}/{tentativas}, aguardando...", "orange")
+                    time.sleep(espera_s)
+                    continue
                 log(f"✗ Erro ao preparar arquivos:\n{r.stderr}", "red")
                 ok_geral = False
+            if ok_add:
+                log("✓ Todos os arquivos da pasta dados/ preparados", "green")
 
             # ── 5. git commit ──────────────────────────────────────────────
             partes = []
@@ -194,31 +211,40 @@ def run_update():
             if cnh_ok:    partes.append("CNH")
             sufixo = (" (+ " + " + ".join(partes) + ")") if partes else ""
             msg_commit = f"Atualização de base{sufixo} — {agora}"
-            r = subprocess.run(
-                ["git", "commit", "-m", msg_commit],
-                cwd=PROJECT_DIR,
-                capture_output=True,
-                text=True
-            )
-            if r.returncode == 0:
-                log("✓ Commit realizado", "green")
-            else:
-                log("  Sem alterações novas para commitar", "orange")
+            ok_commit = False
+            if ok_add:
+                r = _git(["git", "commit", "-m", msg_commit])
+                if r.returncode == 0:
+                    log("✓ Commit realizado", "green")
+                    ok_commit = True
+                else:
+                    log("  Sem alterações novas para commitar", "orange")
 
             # ── 6. git push ────────────────────────────────────────────────
-            log("  Enviando ao GitHub...")
-            r = subprocess.run(
-                ["git", "push", "origin", "main"],
-                cwd=PROJECT_DIR,
-                capture_output=True,
-                text=True
-            )
-            if r.returncode == 0:
-                log("✓ Enviado com sucesso!", "green")
-                log("\nO dashboard será atualizado em instantes.", "green")
-            else:
-                log(f"✗ Erro ao enviar ao GitHub:\n{r.stderr}", "red")
-                ok_geral = False
+            if ok_commit:
+                log("  Enviando ao GitHub...")
+                for tentativa in range(1, tentativas + 1):
+                    r = _git(["git", "push", "origin", "main"])
+                    if r.returncode == 0:
+                        log("✓ Enviado com sucesso!", "green")
+                        log("\nO dashboard será atualizado em instantes.", "green")
+                        break
+                    rejeitado = "rejected" in (r.stderr or "") or "cannot lock ref" in (r.stderr or "")
+                    if rejeitado and tentativa < tentativas:
+                        log(f"  Remoto avançou (outro processo publicou primeiro) — "
+                            f"rebase e nova tentativa {tentativa}/{tentativas}...", "orange")
+                        _git(["git", "fetch", "origin", "main"])
+                        rr = _git(["git", "rebase", "origin/main"])
+                        if rr.returncode != 0:
+                            _git(["git", "rebase", "--abort"])
+                            log(f"✗ Rebase falhou, abortando:\n{rr.stderr}", "red")
+                            ok_geral = False
+                            break
+                        time.sleep(espera_s)
+                        continue
+                    log(f"✗ Erro ao enviar ao GitHub:\n{r.stderr}", "red")
+                    ok_geral = False
+                    break
 
         except subprocess.TimeoutExpired:
             log("✗ Timeout: o download demorou mais do esperado.", "red")
