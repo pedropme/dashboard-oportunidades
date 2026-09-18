@@ -1948,13 +1948,20 @@ with tab1:
             else:
                 _df_mp = pd.DataFrame(_mp_rows)
 
-                # Média de atingimento por município (vários consultores → média)
+                # Média atual do consultor por município. Nos poucos municípios
+                # atendidos por mais de um consultor, mostra a média entre eles.
                 _mp_ter_mun = _mp_ter[["NOME BI", "Código IBGE"]].drop_duplicates()
                 _df_mp_mun = (
                     _df_mp
                     .merge(_mp_ter_mun, on="NOME BI", how="left")
-                    .groupby("Código IBGE")["Atingimento"]
-                    .mean()
+                    .groupby("Código IBGE")
+                    .agg(
+                        Atingimento=("Atingimento", "mean"),
+                        Consultores=(
+                            "NOME BI",
+                            lambda s: ", ".join(sorted(s.dropna().unique())),
+                        ),
+                    )
                     .reset_index()
                     .rename(columns={"Código IBGE": "CD_MUN"})
                 )
@@ -1979,10 +1986,17 @@ with tab1:
                     if _row["geometry"] is None:
                         continue
                     _cor = _cor_ating(_row["Atingimento"])
+                    _consultores_mun = _row.get("Consultores", "") or "-"
+                    _rotulo_media = (
+                        "Média atual"
+                        if "," not in _consultores_mun
+                        else "Média atual (entre os consultores)"
+                    )
                     _tip = (
                         f"<b>Município:</b> {_row.get('NM_MUN','')}<br>"
                         f"<b>UF:</b> {_row.get('SIGLA_UF','')}<br>"
-                        f"<b>Atingimento:</b> {_row['Atingimento']:.1f}%"
+                        f"<b>Consultor:</b> {_consultores_mun}<br>"
+                        f"<b>{_rotulo_media}:</b> {_row['Atingimento']:.1f}%"
                     )
                     folium.GeoJson(
                         _row["geometry"],
@@ -2000,6 +2014,7 @@ with tab1:
                 # Legenda de cores
                 st.markdown(
                     "<div style='display:flex;gap:24px;margin-top:6px;font-size:14px;'>"
+                    "<span><b>Média atual do consultor:</b></span>"
                     "<span>🟢 &ge; 60%</span>"
                     "<span>🟡 20 – 59,9%</span>"
                     "<span>🔴 &lt; 20%</span>"
