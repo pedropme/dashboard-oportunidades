@@ -12,3 +12,4 @@ streamlit-folium
 pyogrio
 streamlit-cookies-controller
 streamlit-aggrid
+reportlab

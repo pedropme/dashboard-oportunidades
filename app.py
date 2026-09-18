@@ -9,6 +9,7 @@ import subprocess
 import json
 import time
 from streamlit_cookies_controller import CookieController
+import export_pdf
 
 # =========================
 # CONFIG
@@ -2483,6 +2484,38 @@ with tab3:
         matriz_consultor = matriz[
             matriz["CONSULTOR"] == consultor_matriz
         ].copy()
+
+        # =========================
+        # EXPORTAR FICHA EM PDF
+        # =========================
+        # Respeita o filtro do consultor na barra lateral: se um consultor
+        # específico está selecionado, exporta só a ficha dele; se está em
+        # "Todos", exporta todos os consultores que passam pelos filtros de
+        # região/filial/estado (o mesmo conjunto de `lista_consultores`).
+        if vendedor_bi != "Todos":
+            _pdf_bytes = export_pdf.gerar_pdf_consultor(
+                vendedor_bi, matriz, realizado
+            )
+            st.download_button(
+                "📄 Baixar Ficha em PDF",
+                data=_pdf_bytes,
+                file_name=f"Ficha_Performance_{vendedor_bi}.pdf".replace("/", "-"),
+                mime="application/pdf",
+            )
+        else:
+            if st.button("📦 Gerar Fichas em PDF (todos os consultores filtrados)"):
+                with st.spinner(f"Gerando {len(lista_consultores)} fichas..."):
+                    st.session_state["_zip_fichas_pdf"] = export_pdf.gerar_zip_consultores(
+                        lista_consultores, matriz, realizado
+                    )
+
+            if "_zip_fichas_pdf" in st.session_state:
+                st.download_button(
+                    "📦 Baixar Fichas em PDF (.zip)",
+                    data=st.session_state["_zip_fichas_pdf"],
+                    file_name="Fichas_Performance.zip",
+                    mime="application/zip",
+                )
 
         # =========================
         # ACUMULADORES DE PONTUAÇÃO
