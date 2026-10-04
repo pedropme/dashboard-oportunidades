@@ -299,6 +299,18 @@ def normalizar(col):
         .str.replace(r"\s+", " ", regex=True)
     )
 
+
+def soma_meta(valores):
+    """Soma meses de meta ignorando célula vazia.
+
+    Célula vazia em metas.xlsx = mês sem meta (consultor que entrou no meio
+    do ano); é diferente de meta 0, que é meta definida e já batida. Devolve
+    (soma, tem_meta): sem nenhuma meta no período, ele fica fora da média
+    em vez de pontuar zero.
+    """
+    presentes = [v for v in valores if pd.notna(v)]
+    return sum(presentes), bool(presentes)
+
 # =========================
 # CLASSIFICAÇÃO PRODUTOS
 # =========================
@@ -1918,25 +1930,28 @@ with tab1:
                 _n    = len(_cons_metas)
                 _base = (100 / _n) if _n > 0 else 0
                 _pq1 = _pq2 = _pq3 = _pq4 = 0.0
+                _tem1 = _tem2 = _tem3 = _tem4 = False
                 for _, _mr in _cons_metas.iterrows():
                     _p   = _mr["PRODUTO"]
-                    _mq1 = _mr["JAN"] + _mr["FEV"] + _mr["MAR"]
-                    _mq2 = _mr["ABR"] + _mr["MAI"] + _mr["JUN"]
-                    _mq3 = _mr["JUL"] + _mr["AGO"] + _mr["SET"]
-                    _mq4 = _mr["OUT"] + _mr["NOV"] + _mr["DEZ"]
+                    _mq1, _t1 = soma_meta([_mr["JAN"], _mr["FEV"], _mr["MAR"]])
+                    _mq2, _t2 = soma_meta([_mr["ABR"], _mr["MAI"], _mr["JUN"]])
+                    _mq3, _t3 = soma_meta([_mr["JUL"], _mr["AGO"], _mr["SET"]])
+                    _mq4, _t4 = soma_meta([_mr["OUT"], _mr["NOV"], _mr["DEZ"]])
+                    _tem1, _tem2 = _tem1 or _t1, _tem2 or _t2
+                    _tem3, _tem4 = _tem3 or _t3, _tem4 or _t4
                     _rq1 = sum(_mp_real(_nome_bi, _p, m) for m in [1,2,3])
                     _rq2 = sum(_mp_real(_nome_bi, _p, m) for m in [4,5,6])
                     _rq3 = sum(_mp_real(_nome_bi, _p, m) for m in [7,8,9])
                     _rq4 = sum(_mp_real(_nome_bi, _p, m) for m in [10,11,12])
-                    _pq1 += _mp_score(_rq1, _mq1, _base)
-                    _pq2 += _mp_score(_rq2, _mq2, _base) if _mes_atual_mp >= 4  else 0
-                    _pq3 += _mp_score(_rq3, _mq3, _base) if _mes_atual_mp >= 7  else 0
-                    _pq4 += _mp_score(_rq4, _mq4, _base) if _mes_atual_mp >= 10 else 0
+                    _pq1 += _mp_score(_rq1, _mq1, _base) if _t1 else 0
+                    _pq2 += _mp_score(_rq2, _mq2, _base) if _t2 and _mes_atual_mp >= 4  else 0
+                    _pq3 += _mp_score(_rq3, _mq3, _base) if _t3 and _mes_atual_mp >= 7  else 0
+                    _pq4 += _mp_score(_rq4, _mq4, _base) if _t4 and _mes_atual_mp >= 10 else 0
                 _vals = (
-                    [round(_pq1, 1)] * int(_mes_atual_mp >= 1)
-                    + [round(_pq2, 1)] * int(_mes_atual_mp >= 4)
-                    + [round(_pq3, 1)] * int(_mes_atual_mp >= 7)
-                    + [round(_pq4, 1)] * int(_mes_atual_mp >= 10)
+                    [round(_pq1, 1)] * int(_mes_atual_mp >= 1  and _tem1)
+                    + [round(_pq2, 1)] * int(_mes_atual_mp >= 4  and _tem2)
+                    + [round(_pq3, 1)] * int(_mes_atual_mp >= 7  and _tem3)
+                    + [round(_pq4, 1)] * int(_mes_atual_mp >= 10 and _tem4)
                 )
                 _mp_rows.append({
                     "NOME BI":    _nome_bi,
@@ -2873,10 +2888,10 @@ with tab3:
             # =================================================
             # TRIMESTRES
             # =================================================
-            meta_q1 = jan + fev + mar
-            meta_q2 = abr + mai + jun
-            meta_q3 = jul + ago + setm
-            meta_q4 = out + nov + dez
+            meta_q1, tem_meta_q1 = soma_meta([jan, fev, mar])
+            meta_q2, tem_meta_q2 = soma_meta([abr, mai, jun])
+            meta_q3, tem_meta_q3 = soma_meta([jul, ago, setm])
+            meta_q4, tem_meta_q4 = soma_meta([out, nov, dez])
 
             real_q1 = r_jan + r_fev + r_mar
             real_q2 = r_abr + r_mai + r_jun
@@ -2946,23 +2961,26 @@ with tab3:
                 # =============================================
                 st.markdown("#### Meta")
 
+                # Trimestre sem nenhuma meta fica em branco, para não ser
+                # lido como meta zero (que é meta definida e já batida).
+                _sem = float("nan")
                 meta_df = pd.DataFrame({
                     "Jan": [jan],
                     "Fev": [fev],
                     "Mar": [mar],
-                    "1 TRI": [meta_q1],
+                    "1 TRI": [meta_q1 if tem_meta_q1 else _sem],
                     "Abr": [abr],
                     "Mai": [mai],
                     "Jun": [jun],
-                    "2 TRI": [meta_q2],
+                    "2 TRI": [meta_q2 if tem_meta_q2 else _sem],
                     "Jul": [jul],
                     "Ago": [ago],
                     "Set": [setm],
-                    "3 TRI": [meta_q3],
+                    "3 TRI": [meta_q3 if tem_meta_q3 else _sem],
                     "Out": [out],
                     "Nov": [nov],
                     "Dez": [dez],
-                    "4 TRI": [meta_q4],
+                    "4 TRI": [meta_q4 if tem_meta_q4 else _sem],
                     "TOTAL": [total_meta]
                 })
 
@@ -3047,10 +3065,10 @@ with tab3:
                 # =========================
                 # PONTUAÇÃO POR TRIMESTRE
                 # =========================
-                p_q1 = calc_ponto(real_q1, meta_q1)
-                p_q2 = calc_ponto(real_q2, meta_q2) if _mes_hoje >= 4  else 0.0
-                p_q3 = calc_ponto(real_q3, meta_q3) if _mes_hoje >= 7  else 0.0
-                p_q4 = calc_ponto(real_q4, meta_q4) if _mes_hoje >= 10 else 0.0
+                p_q1 = calc_ponto(real_q1, meta_q1) if tem_meta_q1 else 0.0
+                p_q2 = calc_ponto(real_q2, meta_q2) if tem_meta_q2 and _mes_hoje >= 4  else 0.0
+                p_q3 = calc_ponto(real_q3, meta_q3) if tem_meta_q3 and _mes_hoje >= 7  else 0.0
+                p_q4 = calc_ponto(real_q4, meta_q4) if tem_meta_q4 and _mes_hoje >= 10 else 0.0
 
                 total_p_q1 += p_q1
                 total_p_q2 += p_q2
@@ -3128,13 +3146,16 @@ with tab3:
 
                 _rk_base = (100 / _rk_n) if _rk_n > 0 else 0
                 _rk_pq1 = _rk_pq2 = _rk_pq3 = _rk_pq4 = 0.0
+                _rk_t1 = _rk_t2 = _rk_t3 = _rk_t4 = False
 
                 for _, _rk_row in _rk_mc.iterrows():
                     _rk_prod = _rk_row["PRODUTO"]
-                    _rk_mq1  = _rk_row["JAN"] + _rk_row["FEV"] + _rk_row["MAR"]
-                    _rk_mq2  = _rk_row["ABR"] + _rk_row["MAI"] + _rk_row["JUN"]
-                    _rk_mq3  = _rk_row["JUL"] + _rk_row["AGO"] + _rk_row["SET"]
-                    _rk_mq4  = _rk_row["OUT"] + _rk_row["NOV"] + _rk_row["DEZ"]
+                    _rk_mq1, _t1 = soma_meta([_rk_row["JAN"], _rk_row["FEV"], _rk_row["MAR"]])
+                    _rk_mq2, _t2 = soma_meta([_rk_row["ABR"], _rk_row["MAI"], _rk_row["JUN"]])
+                    _rk_mq3, _t3 = soma_meta([_rk_row["JUL"], _rk_row["AGO"], _rk_row["SET"]])
+                    _rk_mq4, _t4 = soma_meta([_rk_row["OUT"], _rk_row["NOV"], _rk_row["DEZ"]])
+                    _rk_t1, _rk_t2 = _rk_t1 or _t1, _rk_t2 or _t2
+                    _rk_t3, _rk_t4 = _rk_t3 or _t3, _rk_t4 or _t4
                     _rk_rq1  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [1, 2, 3])
                     _rk_rq2  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [4, 5, 6])
                     _rk_rq3  = sum(buscar_realizado(_rk_cons, _rk_prod, m) for m in [7, 8, 9])
@@ -3146,10 +3167,10 @@ with tab3:
                         if real < meta: return 0.0
                         return base + base * min((real - meta) / meta, 1.0) * 0.20
 
-                    _rk_pq1 += _rk_score(_rk_rq1, _rk_mq1, _rk_base)
-                    _rk_pq2 += _rk_score(_rk_rq2, _rk_mq2, _rk_base) if _mes_atual >= 4  else 0
-                    _rk_pq3 += _rk_score(_rk_rq3, _rk_mq3, _rk_base) if _mes_atual >= 7  else 0
-                    _rk_pq4 += _rk_score(_rk_rq4, _rk_mq4, _rk_base) if _mes_atual >= 10 else 0
+                    _rk_pq1 += _rk_score(_rk_rq1, _rk_mq1, _rk_base) if _t1 else 0
+                    _rk_pq2 += _rk_score(_rk_rq2, _rk_mq2, _rk_base) if _t2 and _mes_atual >= 4  else 0
+                    _rk_pq3 += _rk_score(_rk_rq3, _rk_mq3, _rk_base) if _t3 and _mes_atual >= 7  else 0
+                    _rk_pq4 += _rk_score(_rk_rq4, _rk_mq4, _rk_base) if _t4 and _mes_atual >= 10 else 0
 
                 _rk_filial = (
                     _rk_mc["Filial"].dropna().iloc[0]
@@ -3161,12 +3182,12 @@ with tab3:
                 _rk_q3pct = round(_rk_pq3, 1)
                 _rk_q4pct = round(_rk_pq4, 1)
 
-                # Média apenas dos trimestres já iniciados
+                # Média apenas dos trimestres já iniciados e com meta definida
                 _rk_vals = (
-                    [_rk_q1pct] * int(_mes_atual >= 1)
-                    + [_rk_q2pct] * int(_mes_atual >= 4)
-                    + [_rk_q3pct] * int(_mes_atual >= 7)
-                    + [_rk_q4pct] * int(_mes_atual >= 10)
+                    [_rk_q1pct] * int(_mes_atual >= 1  and _rk_t1)
+                    + [_rk_q2pct] * int(_mes_atual >= 4  and _rk_t2)
+                    + [_rk_q3pct] * int(_mes_atual >= 7  and _rk_t3)
+                    + [_rk_q4pct] * int(_mes_atual >= 10 and _rk_t4)
                 )
                 _rk_media = round(sum(_rk_vals) / len(_rk_vals), 1) if _rk_vals else 0
 

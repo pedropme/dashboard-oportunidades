@@ -63,6 +63,8 @@ def _cor_faixa(pct: float):
 def _fmt_valor(v, monetario: bool) -> str:
     # "R$" fica no rotulo da linha, nao na celula — e o que da espaco pra
     # tabela larga caber em retrato.
+    if v is None or pd.isna(v):
+        return "-"
     if monetario:
         return f"{round(v):,}".replace(",", ".")
     return f"{v:.0f}"
@@ -112,6 +114,7 @@ def montar_dados_consultor(consultor_bi, matriz, realizado, col_vend="CONSULTOR"
 
     blocos = []
     soma_pontos_q = [0.0, 0.0, 0.0, 0.0]
+    tem_meta_q = [False, False, False, False]
     impl_real = 0.0
     trator_real = 0.0
 
@@ -119,7 +122,11 @@ def montar_dados_consultor(consultor_bi, matriz, realizado, col_vend="CONSULTOR"
         produto = row["PRODUTO"]
         is_monetary = produto in ("IMPLEMENTO", "USADOS")
 
-        meses_meta = [row[m] for m in MESES]
+        # Célula vazia = mês sem meta (consultor que entrou no meio do ano).
+        # Diferente de meta 0, que é meta definida e já batida.
+        meses_meta_bruto = [row[m] for m in MESES]
+        tem_meta_mes = [pd.notna(v) for v in meses_meta_bruto]
+        meses_meta = [0 if pd.isna(v) else v for v in meses_meta_bruto]
         meses_real = [buscar_realizado(produto, i + 1) for i in range(12)]
 
         def tri(vals, i):
@@ -127,19 +134,21 @@ def montar_dados_consultor(consultor_bi, matriz, realizado, col_vend="CONSULTOR"
 
         meta_q = [tri(meses_meta, i) for i in range(4)]
         real_q = [tri(meses_real, i) for i in range(4)]
+        tem_meta_tri = [any(tem_meta_mes[i * 3: i * 3 + 3]) for i in range(4)]
         dif_mes = [r - m for r, m in zip(meses_real, meses_meta)]
         dif_q = [r - m for r, m in zip(real_q, meta_q)]
         meta_total = sum(meses_meta)
         real_total = sum(meses_real)
 
+        _iniciado = [True, mes_hoje >= 4, mes_hoje >= 7, mes_hoje >= 10]
         p_q = [
-            _calc_ponto(real_q[0], meta_q[0], base_pct),
-            _calc_ponto(real_q[1], meta_q[1], base_pct) if mes_hoje >= 4 else 0.0,
-            _calc_ponto(real_q[2], meta_q[2], base_pct) if mes_hoje >= 7 else 0.0,
-            _calc_ponto(real_q[3], meta_q[3], base_pct) if mes_hoje >= 10 else 0.0,
+            _calc_ponto(real_q[i], meta_q[i], base_pct)
+            if (_iniciado[i] and tem_meta_tri[i]) else 0.0
+            for i in range(4)
         ]
         for i in range(4):
             soma_pontos_q[i] += p_q[i]
+            tem_meta_q[i] = tem_meta_q[i] or tem_meta_tri[i]
 
         ano_atm_meta = sum(meta_q[:quarters_iniciados])
         ano_atm_real = sum(real_q[:quarters_iniciados])
@@ -153,13 +162,18 @@ def montar_dados_consultor(consultor_bi, matriz, realizado, col_vend="CONSULTOR"
         blocos.append(dict(
             produto=produto, is_monetary=is_monetary,
             meses_meta=meses_meta, meses_real=meses_real, dif_mes=dif_mes,
+            tem_meta_mes=tem_meta_mes, tem_meta_tri=tem_meta_tri,
             meta_q=meta_q, real_q=real_q, dif_q=dif_q,
             meta_total=meta_total, real_total=real_total, dif_total=real_total - meta_total,
             ano_atm_meta=ano_atm_meta, ano_atm_real=ano_atm_real, ano_atm_dif=ano_atm_real - ano_atm_meta,
             p_q=p_q, ano_atm_pontos=pontuacao_total_produto, total_pontos=pontuacao_total_produto,
         ))
 
-    vals_iniciados = soma_pontos_q[:quarters_iniciados]
+    # Trimestre sem nenhuma meta fica fora da média: o consultor não pode
+    # ser medido por um período em que ainda não tinha meta.
+    vals_iniciados = [
+        soma_pontos_q[i] for i in range(quarters_iniciados) if tem_meta_q[i]
+    ]
     media_pontuacao = (sum(vals_iniciados) / len(vals_iniciados)) if vals_iniciados else 0
     pontuacao_tri_vigente = soma_pontos_q[tri_vigente]
     rs_impl_trator = (impl_real / trator_real) if trator_real else None
@@ -183,20 +197,28 @@ def _bloco_produto_flowables(bloco, base_pct, quarters_iniciados):
                    "JUL", "AGO", "SET", "3 TRI", "OUT", "NOV", "DEZ", "4 TRI",
                    "ANO ATM", "TOTAL"]
 
-    def linha(rotulo, meses, q, anoatm, total):
+    def linha(rotulo, meses, q, anoatm, total, mask_mes=None, mask_tri=None):
+        # mask: mês/trimestre sem meta vira "-" em vez de zero.
         vals = []
         for i in range(4):
-            vals += [meses[i * 3], meses[i * 3 + 1], meses[i * 3 + 2], q[i]]
+            for j in range(3):
+                k = i * 3 + j
+                vals.append(None if (mask_mes and not mask_mes[k]) else meses[k])
+            vals.append(None if (mask_tri and not mask_tri[i]) else q[i])
         return [rotulo] + [fmt(v) for v in vals] + [fmt(anoatm), fmt(total)]
 
     dados = [cols_header]
-    dados.append(linha("Meta" + sufixo, bloco["meses_meta"], bloco["meta_q"], bloco["ano_atm_meta"], bloco["meta_total"]))
+    dados.append(linha("Meta" + sufixo, bloco["meses_meta"], bloco["meta_q"],
+                       bloco["ano_atm_meta"], bloco["meta_total"],
+                       mask_mes=bloco.get("tem_meta_mes"),
+                       mask_tri=bloco.get("tem_meta_tri")))
     dados.append(linha("Realizado" + sufixo, bloco["meses_real"], bloco["real_q"], bloco["ano_atm_real"], bloco["real_total"]))
     dados.append(linha("Diferença" + sufixo, bloco["dif_mes"], bloco["dif_q"], bloco["ano_atm_dif"], bloco["dif_total"]))
 
+    _tem_tri = bloco.get("tem_meta_tri") or [True] * 4
     pontos_row = ["Pontos"]
     for i in range(4):
-        pontos_row += ["", "", "", f"{bloco['p_q'][i]:.1f}"]
+        pontos_row += ["", "", "", (f"{bloco['p_q'][i]:.1f}" if _tem_tri[i] else "-")]
     pontos_row += [f"{bloco['ano_atm_pontos']:.1f}", f"{bloco['total_pontos']:.1f}"]
     dados.append(pontos_row)
 
@@ -236,13 +258,18 @@ def _bloco_produto_flowables(bloco, base_pct, quarters_iniciados):
 
     for i in range(4):
         col_idx = 4 + i * 4
+        if not _tem_tri[i]:
+            # Trimestre sem meta: não pontua nem reprova — fica neutro.
+            estilo += [("BACKGROUND", (col_idx, 4), (col_idx, 4), CINZA_TRI)]
+            continue
         pct_rel = (bloco["p_q"][i] / base_pct * 100) if base_pct else 0
         estilo += [("BACKGROUND", (col_idx, 4), (col_idx, 4), _cor_faixa(pct_rel)),
                    ("TEXTCOLOR", (col_idx, 4), (col_idx, 4), colors.white),
                    ("FONTNAME", (col_idx, 4), (col_idx, 4), "Helvetica-Bold")]
+    _q_validos = sum(1 for i in range(quarters_iniciados) if _tem_tri[i])
     for col_idx in (n_col - 2, n_col - 1):
         val = bloco["ano_atm_pontos"] if col_idx == n_col - 2 else bloco["total_pontos"]
-        maxv = base_pct * quarters_iniciados
+        maxv = base_pct * _q_validos
         pct_rel = (val / maxv * 100) if maxv else 0
         estilo += [("BACKGROUND", (col_idx, 4), (col_idx, 4), _cor_faixa(pct_rel)),
                    ("TEXTCOLOR", (col_idx, 4), (col_idx, 4), colors.white),
@@ -325,7 +352,8 @@ def gerar_pdf_bytes(dados) -> bytes:
     elementos.append(Spacer(1, 2 * mm))
     elementos.append(Paragraph(
         "Pontuação calculada com a mesma fórmula já usada na aba Matriz de Performance / Ranking de "
-        "Consultores do painel. Trimestres ainda não iniciados aparecem zerados. Linhas monetárias mostram "
+        "Consultores do painel. Trimestres ainda não iniciados aparecem zerados. Meses sem meta definida "
+        "aparecem com \"-\" e o trimestre correspondente fica fora da média. Linhas monetárias mostram "
         "valores em R$ (prefixo omitido nas células para caber no retrato).",
         _st_nota,
     ))
