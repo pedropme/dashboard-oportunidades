@@ -28,7 +28,9 @@ import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether,
+)
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
@@ -180,11 +182,118 @@ def montar_dados_consultor(consultor_bi, matriz, realizado, col_vend="CONSULTOR"
 
     return dict(
         consultor_bi=consultor_bi, filial=filial, regiao=regiao,
+        titulo=consultor_bi, subtitulo=f"{regiao} · {filial}",
         n_produtos=n_produtos, base_pct=base_pct, mes_hoje=mes_hoje,
         tri_vigente=tri_vigente, quarters_iniciados=quarters_iniciados,
         blocos=blocos, media_pontuacao=media_pontuacao,
         pontuacao_tri_vigente=pontuacao_tri_vigente, rs_impl_trator=rs_impl_trator,
     )
+
+
+def montar_dados_loja(loja_nome, ml_sel, buscar_real, tipo_meta="Matriz de Performance"):
+    """Mesma ficha, mas para uma loja.
+
+    `ml_sel` são as linhas de meta da loja (aba LOJA ou ORÇAMENTO de
+    metas.xlsx) e `buscar_real(produto, mes)` devolve o realizado da loja.
+    A pontuação segue a regra do modo Loja na tela, em que meta zerada não
+    pontua — diferente do consultor, onde meta 0 conta como já batida.
+    """
+    n_produtos = len(ml_sel)
+    base_pct = (100 / n_produtos) if n_produtos > 0 else 0
+    mes_hoje = pd.Timestamp.today().month
+    tri_vigente = (mes_hoje - 1) // 3
+    quarters_iniciados = sum(1 for m in (1, 4, 7, 10) if mes_hoje >= m)
+
+    def _primeiro(col):
+        if col not in ml_sel.columns:
+            return "-"
+        s = ml_sel[col].dropna()
+        return s.iloc[0] if not s.empty else "-"
+
+    filial = _primeiro("FILIAL_NOME")
+    regiao = _primeiro("REGIÃO")
+
+    def ponto_loja(real, meta):
+        if pd.isna(real) or pd.isna(meta):
+            return 0.0
+        if meta <= 0 or real < meta:
+            return 0.0
+        return base_pct + base_pct * min((real - meta) / meta, 1.0) * 0.20
+
+    blocos = []
+    soma_pontos_q = [0.0, 0.0, 0.0, 0.0]
+    tem_meta_q = [False, False, False, False]
+    impl_real = 0.0
+    trator_real = 0.0
+
+    for _, row in ml_sel.iterrows():
+        produto = row["PRODUTO"]
+        is_monetary = produto in ("IMPLEMENTO", "USADOS")
+
+        meses_meta_bruto = [row[m] for m in MESES]
+        tem_meta_mes = [pd.notna(v) for v in meses_meta_bruto]
+        meses_meta = [0 if pd.isna(v) else v for v in meses_meta_bruto]
+        meses_real = [buscar_real(produto, i + 1) for i in range(12)]
+
+        def tri(vals, i):
+            return sum(vals[i * 3: i * 3 + 3])
+
+        meta_q = [tri(meses_meta, i) for i in range(4)]
+        real_q = [tri(meses_real, i) for i in range(4)]
+        tem_meta_tri = [any(tem_meta_mes[i * 3: i * 3 + 3]) for i in range(4)]
+        dif_mes = [r - m for r, m in zip(meses_real, meses_meta)]
+        dif_q = [r - m for r, m in zip(real_q, meta_q)]
+        meta_total = sum(meses_meta)
+        real_total = sum(meses_real)
+
+        _iniciado = [True, mes_hoje >= 4, mes_hoje >= 7, mes_hoje >= 10]
+        p_q = [
+            ponto_loja(real_q[i], meta_q[i])
+            if (_iniciado[i] and tem_meta_tri[i]) else 0.0
+            for i in range(4)
+        ]
+        for i in range(4):
+            soma_pontos_q[i] += p_q[i]
+            tem_meta_q[i] = tem_meta_q[i] or tem_meta_tri[i]
+
+        pontuacao_total_produto = sum(p_q)
+        if produto == "IMPLEMENTO":
+            impl_real = real_total
+        if produto == "TRATOR":
+            trator_real = real_total
+
+        blocos.append(dict(
+            produto=produto, is_monetary=is_monetary,
+            meses_meta=meses_meta, meses_real=meses_real, dif_mes=dif_mes,
+            tem_meta_mes=tem_meta_mes, tem_meta_tri=tem_meta_tri,
+            meta_q=meta_q, real_q=real_q, dif_q=dif_q,
+            meta_total=meta_total, real_total=real_total, dif_total=real_total - meta_total,
+            ano_atm_meta=sum(meta_q[:quarters_iniciados]),
+            ano_atm_real=sum(real_q[:quarters_iniciados]),
+            ano_atm_dif=sum(real_q[:quarters_iniciados]) - sum(meta_q[:quarters_iniciados]),
+            p_q=p_q, ano_atm_pontos=pontuacao_total_produto,
+            total_pontos=pontuacao_total_produto,
+        ))
+
+    vals_iniciados = [
+        soma_pontos_q[i] for i in range(quarters_iniciados) if tem_meta_q[i]
+    ]
+    media_pontuacao = (sum(vals_iniciados) / len(vals_iniciados)) if vals_iniciados else 0
+
+    return dict(
+        consultor_bi=loja_nome, filial=filial, regiao=regiao,
+        titulo=loja_nome, subtitulo=f"{regiao} · {filial}",
+        selo=f"Metas: <b>{tipo_meta}</b>",
+        n_produtos=n_produtos, base_pct=base_pct, mes_hoje=mes_hoje,
+        tri_vigente=tri_vigente, quarters_iniciados=quarters_iniciados,
+        blocos=blocos, media_pontuacao=media_pontuacao,
+        pontuacao_tri_vigente=soma_pontos_q[tri_vigente],
+        rs_impl_trator=(impl_real / trator_real) if trator_real else None,
+    )
+
+
+def gerar_pdf_loja(loja_nome, ml_sel, buscar_real, tipo_meta="Matriz de Performance") -> bytes:
+    return gerar_pdf_bytes(montar_dados_loja(loja_nome, ml_sel, buscar_real, tipo_meta))
 
 
 def _bloco_produto_flowables(bloco, base_pct, quarters_iniciados):
@@ -291,8 +400,9 @@ def _bloco_produto_flowables(bloco, base_pct, quarters_iniciados):
 def _cabecalho_flowables(dados):
     linha1 = Table([[
         Paragraph("PME MÁQUINAS", _st_titulo),
-        Paragraph(f"<b>{dados['regiao']}</b> · {dados['filial']}<br/>{dados['consultor_bi']}", _st_sub),
-        Paragraph(f"Status: <b>ATIVO</b><br/>Data: <b>{datetime.now().strftime('%d/%m/%Y')}</b>", _st_sub),
+        Paragraph(f"<b>{dados['subtitulo']}</b><br/>{dados['titulo']}", _st_sub),
+        Paragraph(f"{dados.get('selo', 'Status: <b>ATIVO</b>')}"
+                  f"<br/>Data: <b>{datetime.now().strftime('%d/%m/%Y')}</b>", _st_sub),
     ]], colWidths=[55 * mm, 75 * mm, LARGURA_UTIL - 130 * mm])
     linha1.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
 
@@ -348,11 +458,16 @@ def gerar_pdf_bytes(dados) -> bytes:
     """Recebe o dict de montar_dados_consultor() e devolve os bytes do PDF."""
     elementos = list(_cabecalho_flowables(dados))
     for bloco in dados["blocos"]:
-        elementos += _bloco_produto_flowables(bloco, dados["base_pct"], dados["quarters_iniciados"])
+        # KeepTogether no nível da página (nunca dentro de uma célula de
+        # tabela, onde o reportlab estoura) — evita o cabeçalho do produto
+        # ficar numa página e os números na seguinte.
+        elementos.append(KeepTogether(
+            _bloco_produto_flowables(bloco, dados["base_pct"], dados["quarters_iniciados"])
+        ))
     elementos.append(Spacer(1, 2 * mm))
     elementos.append(Paragraph(
-        "Pontuação calculada com a mesma fórmula já usada na aba Matriz de Performance / Ranking de "
-        "Consultores do painel. Trimestres ainda não iniciados aparecem zerados. Meses sem meta definida "
+        "Pontuação calculada com a mesma fórmula já usada na aba Matriz de Performance do painel. "
+        "Trimestres ainda não iniciados aparecem zerados. Meses sem meta definida "
         "aparecem com \"-\" e o trimestre correspondente fica fora da média. Linhas monetárias mostram "
         "valores em R$ (prefixo omitido nas células para caber no retrato).",
         _st_nota,

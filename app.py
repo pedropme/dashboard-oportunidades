@@ -2259,6 +2259,25 @@ with tab3:
         _n_prod_loja = len(_ml_sel)
         _bpct_loja   = (100 / _n_prod_loja) if _n_prod_loja > 0 else 0
 
+        # =========================
+        # EXPORTAR FICHA DA LOJA EM PDF
+        # =========================
+        if _n_prod_loja > 0:
+            _dados_loja_pdf = export_pdf.montar_dados_loja(
+                loja_matriz,
+                _ml_sel,
+                lambda prod, mes: buscar_realizado_loja(loja_matriz, prod, mes),
+                tipo_meta=_tipo_meta,
+            )
+            st.download_button(
+                "📄 Baixar Ficha da Loja em PDF",
+                data=export_pdf.gerar_pdf_bytes(_dados_loja_pdf),
+                file_name=f"Ficha_Performance_{loja_matriz}.pdf".replace("/", "-"),
+                mime="application/pdf",
+            )
+        else:
+            _dados_loja_pdf = None
+
         # Resumo trimestral (placeholder, preenchido pós-loop)
         lcol_q1, lcol_q2, lcol_q3, lcol_q4, lcol_qf = st.columns(5)
 
@@ -2393,7 +2412,11 @@ with tab3:
         with lcol_q2: st.metric("Q2",    f"{_lp_q2:.1f}%")
         with lcol_q3: st.metric("Q3",    f"{_lp_q3:.1f}%")
         with lcol_q4: st.metric("Q4",    f"{_lp_q4:.1f}%")
-        with lcol_qf: st.metric("FINAL", "0")
+        with lcol_qf:
+            _media_loja = (
+                _dados_loja_pdf["media_pontuacao"] if _dados_loja_pdf else 0
+            )
+            st.metric("FINAL", f"{_media_loja:.1f}%")
 
         # Ranking de lojas
         st.markdown("---")
