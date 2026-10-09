@@ -2256,6 +2256,7 @@ with tab3:
 
         # Acumuladores loja
         _lp_q1 = _lp_q2 = _lp_q3 = _lp_q4 = 0.0
+        _ltem_loja = [False, False, False, False]
         _n_prod_loja = len(_ml_sel)
         _bpct_loja   = (100 / _n_prod_loja) if _n_prod_loja > 0 else 0
 
@@ -2307,6 +2308,9 @@ with tab3:
             _lmq2, _ltem_q2 = soma_meta([_labr, _lmai, _ljun])
             _lmq3, _ltem_q3 = soma_meta([_ljul, _lago, _lset])
             _lmq4, _ltem_q4 = soma_meta([_lout, _lnov, _ldez])
+
+            for _i, _t in enumerate([_ltem_q1, _ltem_q2, _ltem_q3, _ltem_q4]):
+                _ltem_loja[_i] = _ltem_loja[_i] or _t
 
             _lrq1 = _lr_jan + _lr_fev + _lr_mar
             _lrq2 = _lr_abr + _lr_mai + _lr_jun
@@ -2424,8 +2428,19 @@ with tab3:
         with lcol_q3: st.metric("Q3",    f"{_lp_q3:.1f}%")
         with lcol_q4: st.metric("Q4",    f"{_lp_q4:.1f}%")
         with lcol_qf:
+            # Média dos próprios Q1..Q4 exibidos ao lado — calculada aqui, e
+            # não no módulo de exportação, porque o Streamlit não recarrega
+            # módulos importados no rerun e o card ficaria defasado.
+            _lmes = pd.Timestamp.today().month
+            _lvals_final = [
+                v for v, ini, tem in zip(
+                    [_lp_q1, _lp_q2, _lp_q3, _lp_q4],
+                    [_lmes >= 1, _lmes >= 4, _lmes >= 7, _lmes >= 10],
+                    _ltem_loja,
+                ) if ini and tem
+            ]
             _media_loja = (
-                _dados_loja_pdf["media_pontuacao"] if _dados_loja_pdf else 0
+                sum(_lvals_final) / len(_lvals_final) if _lvals_final else 0
             )
             st.metric("FINAL", f"{_media_loja:.1f}%")
 
