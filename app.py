@@ -2303,10 +2303,10 @@ with tab3:
             _lr_nov = buscar_realizado_loja(loja_matriz, _lprod, 11)
             _lr_dez = buscar_realizado_loja(loja_matriz, _lprod, 12)
 
-            _lmq1 = _ljan + _lfev + _lmar
-            _lmq2 = _labr + _lmai + _ljun
-            _lmq3 = _ljul + _lago + _lset
-            _lmq4 = _lout + _lnov + _ldez
+            _lmq1, _ltem_q1 = soma_meta([_ljan, _lfev, _lmar])
+            _lmq2, _ltem_q2 = soma_meta([_labr, _lmai, _ljun])
+            _lmq3, _ltem_q3 = soma_meta([_ljul, _lago, _lset])
+            _lmq4, _ltem_q4 = soma_meta([_lout, _lnov, _ldez])
 
             _lrq1 = _lr_jan + _lr_fev + _lr_mar
             _lrq2 = _lr_abr + _lr_mai + _lr_jun
@@ -2343,11 +2343,18 @@ with tab3:
                 }
 
                 st.markdown("#### Meta")
+                # Trimestre sem nenhuma meta fica em branco, para não ser lido
+                # como meta zero (que é meta definida e já batida).
+                _lsem = float("nan")
                 _lmeta_df = pd.DataFrame({
-                    "Jan": [_ljan],  "Fev": [_lfev],  "Mar": [_lmar],  "1 TRI": [_lmq1],
-                    "Abr": [_labr],  "Mai": [_lmai],  "Jun": [_ljun],  "2 TRI": [_lmq2],
-                    "Jul": [_ljul],  "Ago": [_lago],  "Set": [_lset],  "3 TRI": [_lmq3],
-                    "Out": [_lout],  "Nov": [_lnov],  "Dez": [_ldez],  "4 TRI": [_lmq4],
+                    "Jan": [_ljan],  "Fev": [_lfev],  "Mar": [_lmar],
+                    "1 TRI": [_lmq1 if _ltem_q1 else _lsem],
+                    "Abr": [_labr],  "Mai": [_lmai],  "Jun": [_ljun],
+                    "2 TRI": [_lmq2 if _ltem_q2 else _lsem],
+                    "Jul": [_ljul],  "Ago": [_lago],  "Set": [_lset],
+                    "3 TRI": [_lmq3 if _ltem_q3 else _lsem],
+                    "Out": [_lout],  "Nov": [_lnov],  "Dez": [_ldez],
+                    "4 TRI": [_lmq4 if _ltem_q4 else _lsem],
                     "TOTAL": [_ltotal],
                 })
                 st.dataframe(
@@ -2379,15 +2386,19 @@ with tab3:
                     use_container_width=True, hide_index=True, column_config=_lcol_cfg,
                 )
 
+                # Mesma regra do consultor, inclusive meta zerada = já batida.
                 def _lcalc(real, meta):
-                    if pd.isna(real) or pd.isna(meta): return 0.0
-                    if meta <= 0 or real < meta: return 0.0
+                    real = 0 if pd.isna(real) else real
+                    if pd.isna(meta): return 0.0
+                    if meta == 0: return _bpct_loja
+                    if real < meta: return 0.0
                     return _bpct_loja + _bpct_loja * min((real - meta) / meta, 1.0) * 0.20
 
-                _lpq1 = _lcalc(_lrq1, _lmq1)
-                _lpq2 = _lcalc(_lrq2, _lmq2)
-                _lpq3 = _lcalc(_lrq3, _lmq3)
-                _lpq4 = _lcalc(_lrq4, _lmq4)
+                _lmes_hoje = pd.Timestamp.today().month
+                _lpq1 = _lcalc(_lrq1, _lmq1) if _ltem_q1 else 0.0
+                _lpq2 = _lcalc(_lrq2, _lmq2) if _ltem_q2 and _lmes_hoje >= 4  else 0.0
+                _lpq3 = _lcalc(_lrq3, _lmq3) if _ltem_q3 and _lmes_hoje >= 7  else 0.0
+                _lpq4 = _lcalc(_lrq4, _lmq4) if _ltem_q4 and _lmes_hoje >= 10 else 0.0
 
                 _lp_q1 += _lpq1
                 _lp_q2 += _lpq2
@@ -2435,13 +2446,16 @@ with tab3:
                     continue
                 _lb_r  = 100 / _ln_r
                 _lpq1r = _lpq2r = _lpq3r = _lpq4r = 0.0
+                _ltr1 = _ltr2 = _ltr3 = _ltr4 = False
 
                 for _, _lr in _lml_r.iterrows():
                     _lrp   = _lr["PRODUTO"]
-                    _lrmq1 = _lr["JAN"] + _lr["FEV"] + _lr["MAR"]
-                    _lrmq2 = _lr["ABR"] + _lr["MAI"] + _lr["JUN"]
-                    _lrmq3 = _lr["JUL"] + _lr["AGO"] + _lr["SET"]
-                    _lrmq4 = _lr["OUT"] + _lr["NOV"] + _lr["DEZ"]
+                    _lrmq1, _lrt1 = soma_meta([_lr["JAN"], _lr["FEV"], _lr["MAR"]])
+                    _lrmq2, _lrt2 = soma_meta([_lr["ABR"], _lr["MAI"], _lr["JUN"]])
+                    _lrmq3, _lrt3 = soma_meta([_lr["JUL"], _lr["AGO"], _lr["SET"]])
+                    _lrmq4, _lrt4 = soma_meta([_lr["OUT"], _lr["NOV"], _lr["DEZ"]])
+                    _ltr1, _ltr2 = _ltr1 or _lrt1, _ltr2 or _lrt2
+                    _ltr3, _ltr4 = _ltr3 or _lrt3, _ltr4 or _lrt4
                     _lrrq1 = sum(buscar_realizado_loja(_lnome, _lrp, m) for m in [1, 2, 3])
                     _lrrq2 = sum(buscar_realizado_loja(_lnome, _lrp, m) for m in [4, 5, 6])
                     _lrrq3 = sum(buscar_realizado_loja(_lnome, _lrp, m) for m in [7, 8, 9])
@@ -2453,10 +2467,10 @@ with tab3:
                         if real < meta: return 0.0
                         return base + base * min((real - meta) / meta, 1.0) * 0.20
 
-                    _lpq1r += _lrs(_lrrq1, _lrmq1, _lb_r)
-                    _lpq2r += _lrs(_lrrq2, _lrmq2, _lb_r) if _mes_atual >= 4  else 0
-                    _lpq3r += _lrs(_lrrq3, _lrmq3, _lb_r) if _mes_atual >= 7  else 0
-                    _lpq4r += _lrs(_lrrq4, _lrmq4, _lb_r) if _mes_atual >= 10 else 0
+                    _lpq1r += _lrs(_lrrq1, _lrmq1, _lb_r) if _lrt1 else 0
+                    _lpq2r += _lrs(_lrrq2, _lrmq2, _lb_r) if _lrt2 and _mes_atual >= 4  else 0
+                    _lpq3r += _lrs(_lrrq3, _lrmq3, _lb_r) if _lrt3 and _mes_atual >= 7  else 0
+                    _lpq4r += _lrs(_lrrq4, _lrmq4, _lb_r) if _lrt4 and _mes_atual >= 10 else 0
 
                 _lq1p = round(_lpq1r, 1)
                 _lq2p = round(_lpq2r, 1)
@@ -2464,10 +2478,10 @@ with tab3:
                 _lq4p = round(_lpq4r, 1)
 
                 _lvs = (
-                    [_lq1p] * int(_mes_atual >= 1)
-                    + [_lq2p] * int(_mes_atual >= 4)
-                    + [_lq3p] * int(_mes_atual >= 7)
-                    + [_lq4p] * int(_mes_atual >= 10)
+                    [_lq1p] * int(_mes_atual >= 1  and _ltr1)
+                    + [_lq2p] * int(_mes_atual >= 4  and _ltr2)
+                    + [_lq3p] * int(_mes_atual >= 7  and _ltr3)
+                    + [_lq4p] * int(_mes_atual >= 10 and _ltr4)
                 )
                 _lmed = round(sum(_lvs) / len(_lvs), 1) if _lvs else 0
 

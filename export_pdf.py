@@ -195,8 +195,7 @@ def montar_dados_loja(loja_nome, ml_sel, buscar_real, tipo_meta="Matriz de Perfo
 
     `ml_sel` são as linhas de meta da loja (aba LOJA ou ORÇAMENTO de
     metas.xlsx) e `buscar_real(produto, mes)` devolve o realizado da loja.
-    A pontuação segue a regra do modo Loja na tela, em que meta zerada não
-    pontua — diferente do consultor, onde meta 0 conta como já batida.
+    A pontuação é a mesma do consultor, inclusive meta zerada = já batida.
     """
     n_produtos = len(ml_sel)
     base_pct = (100 / n_produtos) if n_produtos > 0 else 0
@@ -212,13 +211,6 @@ def montar_dados_loja(loja_nome, ml_sel, buscar_real, tipo_meta="Matriz de Perfo
 
     filial = _primeiro("FILIAL_NOME")
     regiao = _primeiro("REGIÃO")
-
-    def ponto_loja(real, meta):
-        if pd.isna(real) or pd.isna(meta):
-            return 0.0
-        if meta <= 0 or real < meta:
-            return 0.0
-        return base_pct + base_pct * min((real - meta) / meta, 1.0) * 0.20
 
     blocos = []
     soma_pontos_q = [0.0, 0.0, 0.0, 0.0]
@@ -248,7 +240,7 @@ def montar_dados_loja(loja_nome, ml_sel, buscar_real, tipo_meta="Matriz de Perfo
 
         _iniciado = [True, mes_hoje >= 4, mes_hoje >= 7, mes_hoje >= 10]
         p_q = [
-            ponto_loja(real_q[i], meta_q[i])
+            _calc_ponto(real_q[i], meta_q[i], base_pct)
             if (_iniciado[i] and tem_meta_tri[i]) else 0.0
             for i in range(4)
         ]
