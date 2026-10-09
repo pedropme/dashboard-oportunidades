@@ -453,7 +453,8 @@ def load_vendas_e_realizado():
 def _load_vendas_e_realizado(_assinatura):
     df = pd.read_excel("dados/vendas.xlsx")
     for col in ["Segmento Maq", "Familia", "Tipo Produto", "Grupo Modelo",
-                "Vendedor", "Calc dim De Para Familia 2", "Regiao", "Modelo"]:
+                "Vendedor", "Calc dim De Para Familia 2", "Regiao", "Modelo",
+                "Empresa"]:
         df[col] = normalizar(df[col].astype(str))
     df["PRODUTO_MATRIZ"]   = df.apply(classificar_produto, axis=1)
 
@@ -484,13 +485,16 @@ def _load_vendas_e_realizado(_assinatura):
     df["VALOR_REALIZADO"]  = df["Quantidade"].astype(float)
     mask_v = df["PRODUTO_MATRIZ"].isin(["IMPLEMENTO", "USADOS"])
     df.loc[mask_v, "VALOR_REALIZADO"] = df.loc[mask_v, "Vl NFVenda"]
-    # FILIAL = a filial a que o VENDEDOR pertence, conforme metas.xlsx —
-    # não a filial de cada nota. Um vendedor que fature por outra loja
-    # continua somando na dele. Quem não está em metas.xlsx (ex.: gerente de
-    # peças) fica sem filial e sai do total da loja de propósito; o realizado
-    # individual não é afetado, pois é chaveado por consultor.
+    # FILIAL = a filial que emitiu a nota (coluna Empresa), que é como o BI
+    # conta o resultado da loja: entra tudo que a loja faturou, inclusive de
+    # quem não tem meta individual em metas.xlsx, e a venda de um vendedor
+    # que faturou por outra loja conta na loja que faturou.
+    # Só o modo Loja usa esta coluna — o realizado do consultor é chaveado
+    # por consultor e não muda.
     _filial_do_vendedor, _cod_para_nome = _mapa_filial_consultor()
-    df["FILIAL"] = df["Vendedor"].map(_filial_do_vendedor)
+    df["FILIAL"] = (
+        df["Empresa"].str.replace(r"^PME\s*-\s*", "", regex=True).str.strip()
+    )
     realizado = (
         df[df["PRODUTO_MATRIZ"].notna()]
         .groupby(["Vendedor", "PRODUTO_MATRIZ", "MES", "FILIAL"])["VALOR_REALIZADO"]
@@ -508,12 +512,13 @@ def _load_vendas_e_realizado(_assinatura):
         df_cons = pd.read_excel(ARQ_CONSORCIO, sheet_name="Vendas")
         df_cons["CONSULTOR"] = normalizar(df_cons["CONSULTOR"].astype(str))
         df_cons["PRODUTO"]   = normalizar(df_cons["PRODUTO"].astype(str))
-        # O consórcio traz a filial na própria planilha, em código (LEM,
-        # BJS...). Vale como fonte para quem não está em metas.xlsx.
+        # Consórcio não tem nota: a loja é a da própria planilha, em código
+        # (LEM, BJS...), que é o equivalente ao "quem faturou". Só quando
+        # falta é que cai na filial do vendedor.
         df_cons["FILIAL"] = normalizar(df_cons["FILIAL"].astype(str))
         df_cons["FILIAL"] = (
-            df_cons["CONSULTOR"].map(_filial_do_vendedor)
-            .fillna(df_cons["FILIAL"].map(_cod_para_nome))
+            df_cons["FILIAL"].map(_cod_para_nome)
+            .fillna(df_cons["CONSULTOR"].map(_filial_do_vendedor))
         )
         df_cons_long = df_cons.melt(
             id_vars=["CONSULTOR", "PRODUTO", "FILIAL"],
