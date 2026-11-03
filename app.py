@@ -10,6 +10,7 @@ import json
 import time
 from streamlit_cookies_controller import CookieController
 import export_pdf
+import horizonte
 
 # =========================
 # CONFIG
@@ -1616,23 +1617,17 @@ with tab1:
             "<p style='font-size:14px; font-weight:600; margin:6px 0 2px 0;'>Tipo de informação</p>",
             unsafe_allow_html=True,
         )
-        _ma, _mb, _mc, _ = st.columns([1.3, 0.5, 2.0, 6], gap="small")
-        with _ma:
-            st.markdown(
-                f"<p style='{_lbl_m} text-align:right;'>Oportunidades</p>",
-                unsafe_allow_html=True,
-            )
-        with _mb:
-            _mapa_matriz = st.toggle("", key="mapa_tipo_toggle", label_visibility="collapsed")
-        with _mc:
-            st.markdown(
-                f"<p style='{_lbl_m}'>Matriz de Performance</p>",
-                unsafe_allow_html=True,
-            )
+        _tipo_mapa = st.radio(
+            "Tipo de informação",
+            options=["Oportunidades", "Matriz de Performance", "Vendas realizadas"],
+            index=0,
+            horizontal=True,
+            key="mapa_tipo",
+            label_visibility="collapsed",
+        )
 
-        _tipo_mapa = "Matriz de Performance" if _mapa_matriz else "Oportunidades"
-
-        # ── Exibição de oportunidades (apenas no modo Oportunidades) ─────────
+        # ── Subfiltro de cada tipo ───────────────────────────────────────────
+        somente_abertas = "Todos com oportunidades"
         if _tipo_mapa == "Oportunidades":
             somente_abertas = st.radio(
                 "Exibição de oportunidades (municípios)",
@@ -1640,8 +1635,17 @@ with tab1:
                 index=1,
                 horizontal=True,
             )
-        else:
-            somente_abertas = "Todos com oportunidades"
+        elif _tipo_mapa == "Vendas realizadas":
+            _vendas_hz = horizonte.carregar_vendas(
+                _sig(horizonte.ARQ_VENDAS), normalizar
+            )
+            _periodo_hz = st.radio(
+                "Período",
+                options=["Todos"] + horizonte.anos_disponiveis(_vendas_hz),
+                index=0,
+                horizontal=True,
+                key="mapa_periodo_vendas",
+            )
 
         # =========================
         # MAPA INTERATIVO
@@ -1878,6 +1882,26 @@ with tab1:
             )
 
             _tabela(tabela_desc_mun, key="tv_desc_mun")
+        elif _tipo_mapa == "Vendas realizadas":
+            # ── MAPA VENDAS REALIZADAS (Projeto Horizonte) ────────────────────
+            horizonte.renderizar(
+                vendas=_vendas_hz,
+                periodo=_periodo_hz,
+                territorio=territorio,
+                gdf_mun=gdf_mun,
+                filial_do_consultor=_mapa_filial_consultor()[0],
+                status_do_consultor=_nome_bi_to_status,
+                regiao=regiao,
+                filial=filial,
+                estado=estado,
+                status_filtro=status_filtro,
+                vendedor=vendedor,
+                filiais_restritas=_filiais_restritas,
+                regiao_restrita=_regiao_restrita,
+                mostrar_dados=mostrar_dados,
+                card=card,
+                tabela=_tabela,
+            )
         else:
             # ── MAPA MATRIZ DE PERFORMANCE ────────────────────────────────────
             # Usa a mesma lógica do ranking de consultores (Tab 3):
