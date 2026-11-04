@@ -19,38 +19,25 @@ os.chdir(RAIZ)
 import analisadas  # noqa: E402  (precisa do sys.path acima)
 
 ARQ_VENDAS = "dados/vendas.xlsx"
-ARQ_CLIENTES = "dados/clientes.xlsx"
 
 
 def levantar_pendentes():
-    cli = pd.read_excel(ARQ_CLIENTES).rename(columns={
-        "Nome da Conta": "Cliente", "CÓD": "CD_MUN", "Cidade": "Municipio"})
-    cli["K"] = analisadas.chave(cli["Cliente"])
-    cli["CD_MUN"] = cli["CD_MUN"].astype(str).str.strip()
-    cli["valido"] = cli["CD_MUN"].str.fullmatch(r"\d{7}", na=False)
-
-    nome_crm = cli.drop_duplicates(subset=["K"]).set_index("K")["Cliente"].to_dict()
-    n_mun = cli[cli["valido"]].groupby("K")["CD_MUN"].nunique()
-    resolvidos = set(n_mun[n_mun == 1].index)
-    ambiguos = set(n_mun[n_mun > 1].index)
-
     v = analisadas.apenas_agricola(pd.read_excel(ARQ_VENDAS))
-    v["K"] = analisadas.chave(v["Cliente"])
-    pend = v[~v["K"].isin(resolvidos)].copy()
+    achado = analisadas.resolver_municipios(v)
+    v = v.assign(Motivo=achado["Motivo"], CD_MUN=achado["CD_MUN"])
+
+    pend = v[v["CD_MUN"].isna()].copy()
     if pend.empty:
         return pd.DataFrame(columns=analisadas.COLUNAS)
 
-    def situacao(k):
-        if k in ambiguos:
-            return "Mais de um município"
-        if k in nome_crm:
-            return "Cadastro sem município"
-        return "Não encontrado no CRM"
+    # Nome como está no CRM: ajuda a achar o cadastro na hora de corrigir.
+    cli = pd.read_excel(analisadas.ARQ_CLIENTES).rename(
+        columns={"Nome da Conta": "Cliente"})
+    nome_crm = dict(zip(analisadas.chave(cli["Cliente"]), cli["Cliente"]))
 
-    pend["Nome CRM"] = pend["K"].map(nome_crm).fillna("")
-    pend["Situação"] = pend["K"].map(situacao)
-    pend["Empresa"] = pend["Empresa"].astype(str).str.replace(
-        r"^PME\s*-\s*", "", regex=True).str.strip()
+    pend["Nome CRM"] = analisadas.chave(pend["Cliente"]).map(nome_crm).fillna("")
+    pend["Situação"] = pend["Motivo"]
+    pend["Empresa"] = analisadas.filial_da_venda(pend["Empresa"])
 
     por_cliente = (
         pend.groupby("Cliente")

@@ -16,9 +16,16 @@ import pandas as pd
 
 ARQ = "dados/Vendas Analisadas.xlsx"
 ABA = "Clientes a identificar"
+ARQ_CLIENTES = "dados/clientes.xlsx"
 
 # A marca de construção não faz parte deste painel.
 MARCA_FORA = "CONSTRUCTION"
+
+MOTIVO_OK_FILIAL = "Resolvido pela filial"
+MOTIVO_OK_UNANIME = "Resolvido (município unânime)"
+MOTIVO_SEM_CRM = "Não encontrado no CRM"
+MOTIVO_MULTI_CPF = "Mais de um CPF para o mesmo nome"
+MOTIVO_SEM_FILIAL = "Mais de um município, sem cadastro na filial"
 
 COLUNAS = [
     "Data Detecção", "Cliente", "Nome CRM", "Situação", "Vendas",
@@ -40,6 +47,95 @@ def apenas_agricola(df, col_marca="Emp Marca Venda"):
         return df
     marca = chave(df[col_marca])
     return df[~marca.str.contains(MARCA_FORA, na=False)]
+
+
+def filial_da_venda(serie_empresa):
+    """'PME - LUIS EDUARDO' -> 'LUIS EDUARDO'."""
+    return (chave(serie_empresa)
+            .str.replace(r"^PME\s*-\s*", "", regex=True).str.strip())
+
+
+def _casa_filial(filial, concessionaria):
+    """A filial da venda corresponde à concessionária do cadastro?
+
+    Cada palavra do nome da filial precisa ser prefixo de alguma palavra da
+    concessionária: resolve TEIXEIRA/TEIXEIRA DE FREITAS, LUIS EDUARDO/LUIS
+    EDUARDO MAGALHAES e GOV/GOVERNADOR VALADARES sem lista de/para.
+    """
+    palavras = concessionaria.split()
+    return all(
+        any(p.startswith(tok) for p in palavras) for tok in filial.split()
+    )
+
+
+def resolver_municipios(vendas, arq_clientes=ARQ_CLIENTES):
+    """Município de cada venda, a partir do cadastro do CRM.
+
+    O mesmo cliente é cadastrado uma vez por filial, então o nome sozinho
+    não decide: vale o cadastro da filial que faturou a venda. O CPF liga
+    os cadastros da mesma pessoa mesmo quando o nome varia entre eles
+    ("FULANO" na venda, "FULANO E OUTROS" no cadastro de uma das lojas).
+
+    `vendas` precisa de Cliente e Empresa. Devolve um DataFrame com
+    CD_MUN, Municipio e Motivo, no mesmo índice das vendas.
+    """
+    cli = pd.read_excel(arq_clientes).rename(columns={
+        "Nome da Conta": "Nome", "Documento (BR: CPF/CNPJ)": "CPF",
+        "Concessionária": "Conc", "CÓD": "CD_MUN", "MUNICIPIO": "Municipio"})
+    cli["K"] = chave(cli["Nome"])
+    cli["CPF"] = cli["CPF"].fillna("").astype(str).str.strip()
+    cli["CD_MUN"] = cli["CD_MUN"].astype(str).str.strip()
+    cli["ConcN"] = chave(cli["Conc"])
+    cli = cli[cli["CD_MUN"].str.fullmatch(r"\d{7}", na=False)]
+
+    por_nome = {k: g for k, g in cli.groupby("K")}
+    por_cpf = {k: g for k, g in cli.groupby("CPF")}
+    nomes = sorted(por_nome)
+
+    k_venda = chave(vendas["Cliente"])
+    filiais = filial_da_venda(vendas["Empresa"])
+    concs = sorted(cli["ConcN"].unique())
+    # filial -> concessionárias, calculado uma vez
+    alvo_por_filial = {
+        f: [c for c in concs if _casa_filial(f, c)] for f in filiais.unique()
+    }
+
+    cache = {}
+
+    def resolver(k, filial):
+        cand = por_nome.get(k)
+        if cand is None:
+            # nome da venda é começo do nome do cadastro, ou o contrário
+            pref = [n for n in nomes
+                    if n.startswith(k + " ") or k.startswith(n + " ")]
+            if not pref:
+                return None, None, MOTIVO_SEM_CRM
+            cand = pd.concat([por_nome[n] for n in pref])
+
+        cpfs = {x for x in cand["CPF"] if x}
+        if len(cpfs) > 1:
+            return None, None, MOTIVO_MULTI_CPF
+        if cpfs:
+            cand = por_cpf[next(iter(cpfs))]
+
+        da_filial = cand[cand["ConcN"].isin(alvo_por_filial.get(filial, []))]
+        if not da_filial.empty:
+            r = da_filial.iloc[0]
+            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_FILIAL
+        if cand["CD_MUN"].nunique() == 1:
+            r = cand.iloc[0]
+            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_UNANIME
+        return None, None, MOTIVO_SEM_FILIAL
+
+    saida = []
+    for k, f in zip(k_venda, filiais):
+        if (k, f) not in cache:
+            cache[(k, f)] = resolver(k, f)
+        saida.append(cache[(k, f)])
+
+    return pd.DataFrame(
+        saida, columns=["CD_MUN", "Municipio", "Motivo"], index=vendas.index
+    )
 
 
 def carregar():
@@ -77,23 +173,32 @@ def atualizar(pendentes, hoje=None):
     """
     hoje = hoje or date.today()
     atual = carregar()
-    antigos = set(chave(atual["Cliente"])) if not atual.empty else set()
+    k_pend = set(chave(pendentes["Cliente"])) if not pendentes.empty else set()
 
+    if atual.empty:
+        manter = atual
+    else:
+        k_atual = chave(atual["Cliente"])
+        preenchido = atual["CÓD IBGE"].str.fullmatch(r"\d{7}", na=False)
+        # Fica quem foi preenchido à mão (o painel usa) e quem segue pendente.
+        # Sai quem o CRM passou a resolver sozinho, para a fila não cobrar
+        # um cliente já identificado.
+        manter = atual[preenchido | k_atual.isin(k_pend)].copy()
+
+        stats = pendentes.set_index(chave(pendentes["Cliente"]))
+        k_manter = chave(manter["Cliente"])
+        for col in ("Vendas", "Faturamento", "Filial", "Vendedor",
+                    "Nome CRM", "Situação"):
+            if col in stats.columns:
+                manter[col] = k_manter.map(stats[col]).fillna(manter[col])
+
+    antigos = set(chave(manter["Cliente"])) if not manter.empty else set()
     novos = pendentes[~chave(pendentes["Cliente"]).isin(antigos)].copy()
     novos["Data Detecção"] = hoje.strftime("%d/%m/%Y")
     novos["CÓD IBGE"] = ""
     novos["Município"] = ""
 
-    # Linha que já existe: só atualiza o que é contagem; o preenchido fica.
-    if not atual.empty:
-        stats = pendentes.set_index(chave(pendentes["Cliente"]))
-        k_atual = chave(atual["Cliente"])
-        for col in ("Vendas", "Faturamento", "Filial", "Vendedor", "Nome CRM", "Situação"):
-            novo_valor = k_atual.map(stats[col]) if col in stats.columns else None
-            if novo_valor is not None:
-                atual[col] = novo_valor.fillna(atual[col])
-
-    fila = pd.concat([atual, novos[COLUNAS]], ignore_index=True)
+    fila = pd.concat([manter, novos[COLUNAS]], ignore_index=True)
     fila = fila.sort_values("Faturamento", ascending=False, na_position="last")
     _gravar(fila)
     return len(fila), len(novos)

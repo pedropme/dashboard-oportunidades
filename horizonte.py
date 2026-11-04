@@ -9,9 +9,9 @@ import streamlit as st
 
 import analisadas
 
-ARQ_VENDAS     = "dados/vendas.xlsx"   # empresa inteira, download diário
-ARQ_CLIENTES   = "dados/clientes.xlsx" # de onde vem o município
-ARQ_ANALISADAS = analisadas.ARQ        # municípios preenchidos à mão
+ARQ_VENDAS     = "dados/vendas.xlsx"        # empresa inteira, download diário
+ARQ_CLIENTES   = analisadas.ARQ_CLIENTES    # de onde vem o município
+ARQ_ANALISADAS = analisadas.ARQ             # municípios preenchidos à mão
 
 COR_FORA    = "#C62828"   # vermelho, mesmo da Matriz de Performance
 COR_BORDA   = "#0D47A1"
@@ -35,40 +35,15 @@ def _mi(v):
     return _brl(v)
 
 
-def _municipio_por_cliente(_normalizar):
-    """Nome do cliente no CRM -> (código IBGE, município, documento).
-
-    Casamento por nome exato, depois de normalizar acento/caixa/espaço. Nome
-    que aparece em mais de um município fica de fora: sem um critério para
-    escolher, a venda entra como município não identificado em vez de ir
-    para o lugar errado.
-    """
-    cli = pd.read_excel(ARQ_CLIENTES).rename(columns={
-        "Nome da Conta": "Cliente",
-        "Documento (BR: CPF/CNPJ)": "Documento",
-        "CÓD": "CD_MUN",
-        "Cidade": "Municipio",
-    })
-    cli["K"] = _normalizar(cli["Cliente"])
-    cli["CD_MUN"] = cli["CD_MUN"].astype(str).str.strip()
-    cli = cli[cli["CD_MUN"].str.fullmatch(r"\d{7}", na=False)]
-
-    g = cli.groupby("K").agg(
-        n_mun=("CD_MUN", "nunique"),
-        CD_MUN=("CD_MUN", "first"),
-        Municipio=("Municipio", "first"),
-        Documento=("Documento", "first"),
-    )
-    return g[g["n_mun"] == 1]
-
-
 @st.cache_data
 def _ler_vendas(_assinatura, _normalizar):
-    crm = _municipio_por_cliente(_normalizar)
-
     df = pd.read_excel(ARQ_VENDAS)
     # A marca de construção não faz parte deste painel.
     df = analisadas.apenas_agricola(df)
+
+    # Município pelo cadastro da filial que faturou (ver analisadas.py).
+    achado = analisadas.resolver_municipios(df)
+
     df = df.rename(columns={
         "Vendedor": "NOME BI",
         "Vl NFVenda": "Valor",
@@ -76,18 +51,16 @@ def _ler_vendas(_assinatura, _normalizar):
     })
     df["NOME BI"] = _normalizar(df["NOME BI"])
     df["Cliente"] = df["Cliente"].astype(str).str.strip()
-
-    # As duas colunas que posicionam a venda no mapa, vindas do CRM.
-    _k = _normalizar(df["Cliente"])
-    df["CD_MUN"] = _k.map(crm["CD_MUN"]).astype("string")
-    df["Municipio"] = _k.map(crm["Municipio"])
-    df["Documento"] = _k.map(crm["Documento"]).fillna("").astype(str).str.strip()
+    df["CD_MUN"] = achado["CD_MUN"].astype("string")
+    df["Municipio"] = achado["Municipio"]
+    df["Documento"] = ""
 
     # O que o CRM não resolveu pode ter sido preenchido à mão na fila de
     # clientes a identificar — ali o preenchimento é a fonte da verdade.
     manual = analisadas.municipios_preenchidos()
     if manual:
         falta = df["CD_MUN"].isna()
+        _k = analisadas.chave(df["Cliente"])
         df.loc[falta, "CD_MUN"] = (
             _k[falta].map({k: v[0] for k, v in manual.items()}).astype("string")
         )
