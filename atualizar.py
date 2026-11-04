@@ -16,6 +16,7 @@ else:
 
 VENDAS_SCRIPT = os.path.join(PROJECT_DIR, "scripts", "baixar_vendas.py")
 CNH_SCRIPT    = os.path.join(PROJECT_DIR, "scripts", "baixar_cnh.py")
+ANALISADAS_SCRIPT = os.path.join(PROJECT_DIR, "scripts", "atualizar_analisadas.py")
 
 # --auto: dispara a atualizacao sozinho ao abrir e fecha a janela sozinho ao
 # terminar. E o que a Tarefa Agendada usa - vendas + CNH + bases manuais +
@@ -164,7 +165,36 @@ def run_update():
             else:
                 log("  (script CNH não encontrado — pulando)", "gray")
 
-            # ── 4. git add dados/ ──────────────────────────────────────────
+            # ── 4. Fila de clientes a identificar ──────────────────────────
+            # Venda cujo cliente não resolve um município no CRM não entra no
+            # mapa. Os pendentes vão para dados/Vendas Analisadas.xlsx, que é
+            # permanente: o preenchimento manual sobrevive à atualização.
+            if os.path.exists(ANALISADAS_SCRIPT):
+                log("\nConferindo clientes sem município identificado...")
+                py = _python_exe()
+                r = subprocess.run(
+                    [py, ANALISADAS_SCRIPT],
+                    cwd=PROJECT_DIR,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=300,
+                )
+                for linha in r.stdout.splitlines():
+                    if linha.strip():
+                        if "ATENCAO" in linha:
+                            log(f"  {linha}", "orange")
+                        elif "Nenhum cliente pendente" in linha:
+                            log(f"  {linha}", "green")
+                        else:
+                            log(f"  {linha}", "gray")
+                if r.returncode != 0:
+                    log("✗ Falha ao atualizar a fila de clientes", "orange")
+                    if r.stderr:
+                        log(f"  {r.stderr[:400]}", "red")
+
+            # ── 5. git add dados/ ──────────────────────────────────────────
             log("\nPreparando arquivos para envio...")
 
             # Mostra quais arquivos em dados/ têm alterações

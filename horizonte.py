@@ -7,7 +7,11 @@ Estado, Status, Vendedor) e as mesmas funções de apoio (card, _tabela).
 import pandas as pd
 import streamlit as st
 
-ARQ_VENDAS = "dados/horizonte_vendas_gv.xlsx"
+import analisadas
+
+ARQ_VENDAS     = "dados/vendas.xlsx"   # empresa inteira, download diário
+ARQ_CLIENTES   = "dados/clientes.xlsx" # de onde vem o município
+ARQ_ANALISADAS = analisadas.ARQ        # municípios preenchidos à mão
 
 COR_FORA    = "#C62828"   # vermelho, mesmo da Matriz de Performance
 COR_BORDA   = "#0D47A1"
@@ -31,27 +35,82 @@ def _mi(v):
     return _brl(v)
 
 
+def _municipio_por_cliente(_normalizar):
+    """Nome do cliente no CRM -> (código IBGE, município, documento).
+
+    Casamento por nome exato, depois de normalizar acento/caixa/espaço. Nome
+    que aparece em mais de um município fica de fora: sem um critério para
+    escolher, a venda entra como município não identificado em vez de ir
+    para o lugar errado.
+    """
+    cli = pd.read_excel(ARQ_CLIENTES).rename(columns={
+        "Nome da Conta": "Cliente",
+        "Documento (BR: CPF/CNPJ)": "Documento",
+        "CÓD": "CD_MUN",
+        "Cidade": "Municipio",
+    })
+    cli["K"] = _normalizar(cli["Cliente"])
+    cli["CD_MUN"] = cli["CD_MUN"].astype(str).str.strip()
+    cli = cli[cli["CD_MUN"].str.fullmatch(r"\d{7}", na=False)]
+
+    g = cli.groupby("K").agg(
+        n_mun=("CD_MUN", "nunique"),
+        CD_MUN=("CD_MUN", "first"),
+        Municipio=("Municipio", "first"),
+        Documento=("Documento", "first"),
+    )
+    return g[g["n_mun"] == 1]
+
+
 @st.cache_data
 def _ler_vendas(_assinatura, _normalizar):
-    df = pd.read_excel(ARQ_VENDAS, sheet_name="GV")
+    crm = _municipio_por_cliente(_normalizar)
+
+    df = pd.read_excel(ARQ_VENDAS)
+    # A marca de construção não faz parte deste painel.
+    df = analisadas.apenas_agricola(df)
     df = df.rename(columns={
         "Vendedor": "NOME BI",
         "Vl NFVenda": "Valor",
         "Segmento Maq": "Segmento",
-        "CPF": "Documento",
     })
     df["NOME BI"] = _normalizar(df["NOME BI"])
     df["Cliente"] = df["Cliente"].astype(str).str.strip()
-    df["Documento"] = df["Documento"].fillna("").astype(str).str.strip()
-    df["CD_MUN"] = (
-        pd.to_numeric(df["IBGE"], errors="coerce")
-        .astype("Int64").astype("string").str.strip()
-    )
-    df["Ano"] = df["Ano"].astype(str)
+
+    # As duas colunas que posicionam a venda no mapa, vindas do CRM.
+    _k = _normalizar(df["Cliente"])
+    df["CD_MUN"] = _k.map(crm["CD_MUN"]).astype("string")
+    df["Municipio"] = _k.map(crm["Municipio"])
+    df["Documento"] = _k.map(crm["Documento"]).fillna("").astype(str).str.strip()
+
+    # O que o CRM não resolveu pode ter sido preenchido à mão na fila de
+    # clientes a identificar — ali o preenchimento é a fonte da verdade.
+    manual = analisadas.municipios_preenchidos()
+    if manual:
+        falta = df["CD_MUN"].isna()
+        df.loc[falta, "CD_MUN"] = (
+            _k[falta].map({k: v[0] for k, v in manual.items()}).astype("string")
+        )
+        df.loc[falta, "Municipio"] = (
+            df.loc[falta, "Municipio"]
+            .fillna(_k[falta].map({k: v[1] for k, v in manual.items()}))
+        )
+
+    return _padronizar(df)
+
+
+def _padronizar(df):
+    df["Ano"] = df["Ano"].astype(str).str.strip()
     df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce").fillna(0)
     df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
     df["Segmento"] = df["Segmento"].fillna("").astype(str).str.strip().str.title()
-    return df
+    for col in ("Ano Mes", "Modelo", "Municipio"):
+        if col not in df.columns:
+            df[col] = None
+    return df[[
+        "Ano", "Ano Mes", "Cliente", "Documento", "CD_MUN", "Municipio",
+        "NOME BI", "Segmento", "Modelo", "Quantidade", "Valor",
+    ]]
 
 
 def carregar_vendas(assinatura, normalizar):
@@ -129,12 +188,11 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
     v_mapa = v[~sem_mun]
 
     # ── Cards ────────────────────────────────────────────────────────────
-    c1, c2 = st.columns(2)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         card("Faturamento (Total)", _brl(v["Valor"].sum()))
     with c2:
         card("Unidades vendidas", _fmt(v["Quantidade"].sum()))
-    c3, c4, c5 = st.columns(3)
     with c3:
         card("Clientes", _fmt(v["Cliente"].nunique()))
     with c4:
@@ -143,6 +201,11 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
         card(
             "Fora do território",
             _fmt(v_mapa.loc[~v_mapa["Dentro"], "CD_MUN"].nunique()),
+        )
+    with c6:
+        card(
+            "Clientes sem município",
+            _fmt(v.loc[sem_mun, "Cliente"].nunique()),
         )
 
     # ── Agregação por município ──────────────────────────────────────────
@@ -246,8 +309,10 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
     n_sem = int(sem_mun.sum())
     if n_sem:
         st.caption(
-            f"ℹ️ {n_sem} venda(s) sem município identificado não aparecem no mapa, "
-            "mas entram nos cards e no descritivo."
+            f"ℹ️ {n_sem} venda(s), {_brl(v.loc[sem_mun, 'Valor'].sum())}, sem "
+            "município identificado: o nome do cliente na base de vendas não "
+            "encontrou correspondência exata no cadastro do CRM. Entram nos "
+            "cards e no descritivo, mas não são desenhadas no mapa."
         )
 
     # ── Tabela de municípios ─────────────────────────────────────────────
@@ -260,9 +325,10 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
         "Município", "UF", "Filial", "Região", "Vendedor", "Faturamento",
         "Unidades", "Clientes", "Território",
     ]
-    tab_mun["Faturamento"] = tab_mun["Faturamento"].round(0).astype(int)
     tab_mun["Unidades"] = tab_mun["Unidades"].astype(int)
+    # Ordena pelo número e só depois formata em R$ (string não ordena direito).
     tab_mun = tab_mun.sort_values("Faturamento", ascending=False)
+    tab_mun["Faturamento"] = tab_mun["Faturamento"].apply(lambda x: _brl(round(x)))
     tabela(tab_mun, key="tv_vendas_municipios")
 
     # ── Descritivo ───────────────────────────────────────────────────────
@@ -274,8 +340,10 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
     )
     nomes = gdf_mun[["CD_MUN", "NM_MUN", "SIGLA_UF"]]
     desc = v.merge(nomes, on="CD_MUN", how="left")
+    desc["NM_MUN"] = desc["NM_MUN"].fillna(desc["Municipio"])
     desc["Território"] = desc["Dentro"].map({True: "Dentro", False: "Fora"})
     desc.loc[desc["CD_MUN"].isna(), "Território"] = "Sem município"
+    desc.loc[desc["CD_MUN"].isna(), "NM_MUN"] = "Não identificado"
     desc["Valor Total"] = desc["Valor"].apply(lambda x: _brl(round(x)))
     tab_desc = (
         desc[[

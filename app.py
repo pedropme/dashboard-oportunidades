@@ -1637,7 +1637,9 @@ with tab1:
             )
         elif _tipo_mapa == "Vendas realizadas":
             _vendas_hz = horizonte.carregar_vendas(
-                _sig(horizonte.ARQ_VENDAS), normalizar
+                _sig(horizonte.ARQ_VENDAS, horizonte.ARQ_CLIENTES,
+                     horizonte.ARQ_ANALISADAS),
+                normalizar,
             )
             _periodo_hz = st.radio(
                 "Período",
