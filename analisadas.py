@@ -24,7 +24,6 @@ MARCA_FORA = "CONSTRUCTION"
 MOTIVO_OK_FILIAL = "Resolvido pela filial"
 MOTIVO_OK_UNANIME = "Resolvido (município unânime)"
 MOTIVO_SEM_CRM = "Não encontrado no CRM"
-MOTIVO_MULTI_CPF = "Mais de um CPF para o mesmo nome"
 MOTIVO_SEM_FILIAL = "Mais de um município, sem cadastro na filial"
 
 COLUNAS = [
@@ -114,21 +113,23 @@ def resolver_municipios(vendas, arq_clientes=ARQ_CLIENTES):
                 return None, None, MOTIVO_SEM_CRM, ""
             cand = pd.concat([por_nome[n] for n in pref])
 
+        # Documento diferente para o mesmo nome não separa: é matriz e
+        # filial do mesmo grupo (mesma raiz de CNPJ), ou a pessoa física e
+        # a jurídica do mesmo titular. Puxa os cadastros de todos eles e
+        # deixa a filial que faturou decidir.
         cpfs = sorted({x for x in cand["CPF"] if x})
-        if len(cpfs) > 1:
-            return None, None, MOTIVO_MULTI_CPF, "; ".join(cpfs)
-        cpf = cpfs[0] if cpfs else ""
-        if cpf:
-            cand = por_cpf[cpf]
+        if cpfs:
+            cand = pd.concat([por_cpf[c] for c in cpfs])
 
         da_filial = cand[cand["ConcN"].isin(alvo_por_filial.get(filial, []))]
         if not da_filial.empty:
             r = da_filial.iloc[0]
-            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_FILIAL, cpf
+            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_FILIAL, r["CPF"]
         if cand["CD_MUN"].nunique() == 1:
             r = cand.iloc[0]
-            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_UNANIME, cpf
-        return None, None, MOTIVO_SEM_FILIAL, cpf
+            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_UNANIME, r["CPF"]
+        # Pendente: mostra todos os documentos, que é o que explica o caso.
+        return None, None, MOTIVO_SEM_FILIAL, "; ".join(cpfs)
 
     saida = []
     for k, f in zip(k_venda, filiais):
