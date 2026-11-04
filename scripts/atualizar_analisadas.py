@@ -24,7 +24,8 @@ ARQ_VENDAS = "dados/vendas.xlsx"
 def levantar_pendentes():
     v = analisadas.apenas_agricola(pd.read_excel(ARQ_VENDAS))
     achado = analisadas.resolver_municipios(v)
-    v = v.assign(Motivo=achado["Motivo"], CD_MUN=achado["CD_MUN"])
+    v = v.assign(Motivo=achado["Motivo"], CD_MUN=achado["CD_MUN"],
+                 CPF=achado["CPF"])
 
     pend = v[v["CD_MUN"].isna()].copy()
     if pend.empty:
@@ -36,6 +37,7 @@ def levantar_pendentes():
     nome_crm = dict(zip(analisadas.chave(cli["Cliente"]), cli["Cliente"]))
 
     pend["Nome CRM"] = analisadas.chave(pend["Cliente"]).map(nome_crm).fillna("")
+    pend["CPF/CNPJ"] = pend["CPF"].fillna("")
     pend["Situação"] = pend["Motivo"]
     pend["Empresa"] = analisadas.filial_da_venda(pend["Empresa"])
 
@@ -45,6 +47,7 @@ def levantar_pendentes():
             **{
                 "Nome CRM": ("Nome CRM", "first"),
                 "Situação": ("Situação", "first"),
+                "CPF/CNPJ": ("CPF/CNPJ", "first"),
                 "Vendas": ("Vl NFVenda", "size"),
                 "Faturamento": ("Vl NFVenda", "sum"),
                 "Filial": ("Empresa", "first"),

@@ -28,7 +28,7 @@ MOTIVO_MULTI_CPF = "Mais de um CPF para o mesmo nome"
 MOTIVO_SEM_FILIAL = "Mais de um município, sem cadastro na filial"
 
 COLUNAS = [
-    "Data Detecção", "Cliente", "Nome CRM", "Situação", "Vendas",
+    "Data Detecção", "Cliente", "Nome CRM", "CPF/CNPJ", "Situação", "Vendas",
     "Faturamento", "Filial", "Vendedor", "CÓD IBGE", "Município",
 ]
 
@@ -77,7 +77,9 @@ def resolver_municipios(vendas, arq_clientes=ARQ_CLIENTES):
     ("FULANO" na venda, "FULANO E OUTROS" no cadastro de uma das lojas).
 
     `vendas` precisa de Cliente e Empresa. Devolve um DataFrame com
-    CD_MUN, Municipio e Motivo, no mesmo índice das vendas.
+    CD_MUN, Municipio, Motivo e CPF, no mesmo índice das vendas. O CPF é o
+    do cadastro usado; quando o nome cai em mais de um CPF, vêm todos, que
+    é o que mostra o conflito a quem for corrigir.
     """
     cli = pd.read_excel(arq_clientes).rename(columns={
         "Nome da Conta": "Nome", "Documento (BR: CPF/CNPJ)": "CPF",
@@ -109,23 +111,24 @@ def resolver_municipios(vendas, arq_clientes=ARQ_CLIENTES):
             pref = [n for n in nomes
                     if n.startswith(k + " ") or k.startswith(n + " ")]
             if not pref:
-                return None, None, MOTIVO_SEM_CRM
+                return None, None, MOTIVO_SEM_CRM, ""
             cand = pd.concat([por_nome[n] for n in pref])
 
-        cpfs = {x for x in cand["CPF"] if x}
+        cpfs = sorted({x for x in cand["CPF"] if x})
         if len(cpfs) > 1:
-            return None, None, MOTIVO_MULTI_CPF
-        if cpfs:
-            cand = por_cpf[next(iter(cpfs))]
+            return None, None, MOTIVO_MULTI_CPF, "; ".join(cpfs)
+        cpf = cpfs[0] if cpfs else ""
+        if cpf:
+            cand = por_cpf[cpf]
 
         da_filial = cand[cand["ConcN"].isin(alvo_por_filial.get(filial, []))]
         if not da_filial.empty:
             r = da_filial.iloc[0]
-            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_FILIAL
+            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_FILIAL, cpf
         if cand["CD_MUN"].nunique() == 1:
             r = cand.iloc[0]
-            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_UNANIME
-        return None, None, MOTIVO_SEM_FILIAL
+            return r["CD_MUN"], r["Municipio"], MOTIVO_OK_UNANIME, cpf
+        return None, None, MOTIVO_SEM_FILIAL, cpf
 
     saida = []
     for k, f in zip(k_venda, filiais):
@@ -134,7 +137,8 @@ def resolver_municipios(vendas, arq_clientes=ARQ_CLIENTES):
         saida.append(cache[(k, f)])
 
     return pd.DataFrame(
-        saida, columns=["CD_MUN", "Municipio", "Motivo"], index=vendas.index
+        saida, columns=["CD_MUN", "Municipio", "Motivo", "CPF"],
+        index=vendas.index,
     )
 
 
@@ -188,7 +192,7 @@ def atualizar(pendentes, hoje=None):
         stats = pendentes.set_index(chave(pendentes["Cliente"]))
         k_manter = chave(manter["Cliente"])
         for col in ("Vendas", "Faturamento", "Filial", "Vendedor",
-                    "Nome CRM", "Situação"):
+                    "Nome CRM", "CPF/CNPJ", "Situação"):
             if col in stats.columns:
                 manter[col] = k_manter.map(stats[col]).fillna(manter[col])
 
@@ -250,8 +254,9 @@ def _gravar(fila):
                 name=FONTE, size=10, color="FF0000", bold=True
             )
 
-    larguras = {"Data Detecção": 13, "Cliente": 42, "Nome CRM": 42, "Situação": 26,
-                "Vendas": 9, "Faturamento": 15, "Filial": 18, "Vendedor": 20,
+    larguras = {"Data Detecção": 13, "Cliente": 42, "Nome CRM": 42,
+                "CPF/CNPJ": 20, "Situação": 26, "Vendas": 9,
+                "Faturamento": 15, "Filial": 18, "Vendedor": 20,
                 "CÓD IBGE": 11, "Município": 24}
     for c, nome in enumerate(COLUNAS, start=1):
         ws.column_dimensions[get_column_letter(c)].width = larguras[nome]
@@ -287,13 +292,19 @@ def _legenda(wb, ult):
     for i, (t, b) in enumerate(linhas, start=1):
         lg.cell(row=i, column=1, value=t).font = Font(name="Arial", size=11, bold=b)
 
+    # Letras vindas de COLUNAS: acrescentar coluna não quebra as fórmulas.
+    from openpyxl.utils import get_column_letter
+
+    col = {n: get_column_letter(i) for i, n in enumerate(COLUNAS, start=1)}
+    cli, ibge, fat = col["Cliente"], col["CÓD IBGE"], col["Faturamento"]
     base = len(linhas) + 1
     resumo = [
-        ("Clientes na fila", f"=COUNTA('{ABA}'!B2:B{ult})", "0"),
-        ("Já identificados", f"=COUNTA('{ABA}'!I2:I{ult})", "0"),
-        ("Falta identificar", f"=COUNTBLANK('{ABA}'!I2:I{ult})", "0"),
+        ("Clientes na fila", f"=COUNTA('{ABA}'!{cli}2:{cli}{ult})", "0"),
+        ("Já identificados", f"=COUNTA('{ABA}'!{ibge}2:{ibge}{ult})", "0"),
+        ("Falta identificar", f"=COUNTBLANK('{ABA}'!{ibge}2:{ibge}{ult})", "0"),
         ("Faturamento sem município",
-         f"=SUMIF('{ABA}'!I2:I{ult},\"\",'{ABA}'!F2:F{ult})", "R$ #,##0"),
+         f"=SUMIF('{ABA}'!{ibge}2:{ibge}{ult},\"\",'{ABA}'!{fat}2:{fat}{ult})",
+         "R$ #,##0"),
     ]
     for i, (rot, f, fmt) in enumerate(resumo, start=base):
         lg.cell(row=i, column=1, value=rot).font = Font(name="Arial", size=11)
