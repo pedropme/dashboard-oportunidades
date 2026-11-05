@@ -18,7 +18,8 @@ ARQ = "dados/Vendas Analisadas.xlsx"
 ABA = "Clientes a identificar"
 ARQ_CLIENTES = "dados/clientes.xlsx"
 
-# A marca de construção não faz parte deste painel.
+# Construção não faz parte deste painel (nem peças e serviços, que não
+# entram no vendas.xlsx).
 MARCA_FORA = "CONSTRUCTION"
 
 MOTIVO_OK_FILIAL = "Resolvido pela filial"
@@ -40,12 +41,16 @@ def chave(serie):
             .str.upper().str.strip().str.replace(r"\s+", " ", regex=True))
 
 
-def apenas_agricola(df, col_marca="Emp Marca Venda"):
-    """Tira as vendas da marca de construção."""
-    if col_marca not in df.columns:
+def apenas_agricola(df, col_segmento="Segmento Maq"):
+    """Tira as vendas de construção.
+
+    O corte é pelo SEGMENTO, não pela marca da loja: a loja de construção
+    também vende empilhadeira e implemento, que contam aqui, e a loja
+    agrícola eventualmente fatura uma máquina de construção, que não conta.
+    """
+    if col_segmento not in df.columns:
         return df
-    marca = chave(df[col_marca])
-    return df[~marca.str.contains(MARCA_FORA, na=False)]
+    return df[~chave(df[col_segmento]).str.contains(MARCA_FORA, na=False)]
 
 
 def filial_da_venda(serie_empresa):

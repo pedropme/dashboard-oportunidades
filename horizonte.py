@@ -137,10 +137,10 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
         v = v[v["Filial"] == filial]
     if estado != "Todos":
         v = v[v["Estado"] == estado]
-    if status_filtro == "Ativos":
-        v = v[v["Status"] == "ATIVO"]
-    elif status_filtro == "Inativos":
-        v = v[v["Status"] == "INATIVO"]
+    # O filtro de Status não se aplica aqui: a aba mostra onde a empresa
+    # faturou, e a venda aconteceu independentemente de o vendedor estar
+    # ativo hoje ou de ter meta em metas.xlsx. Aplicá-lo escondia R$ 70 mi
+    # (R$ 45,8 mi de quem não tem meta e R$ 24,1 mi de inativos).
     if vendedor != "Todos":
         v = v[(v["Vendedor"] == vendedor) | (v["NOME BI"] == vendedor)]
     if periodo != "Todos":
@@ -161,24 +161,21 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
     v_mapa = v[~sem_mun]
 
     # ── Cards ────────────────────────────────────────────────────────────
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    _fat_total = v["Valor"].sum()
+    _fat_fora = v.loc[sem_mun, "Valor"].sum()
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        card("Faturamento (Total)", _brl(v["Valor"].sum()))
+        card("Faturamento (Total)", _brl(_fat_total))
     with c2:
-        card("Unidades vendidas", _fmt(v["Quantidade"].sum()))
+        card("Faturamento no mapa", _brl(_fat_total - _fat_fora))
     with c3:
-        card("Clientes", _fmt(v["Cliente"].nunique()))
+        card("Faturamento sem município", _brl(_fat_fora))
     with c4:
         card("Municípios com venda", _fmt(v_mapa["CD_MUN"].nunique()))
     with c5:
         card(
             "Fora do território",
             _fmt(v_mapa.loc[~v_mapa["Dentro"], "CD_MUN"].nunique()),
-        )
-    with c6:
-        card(
-            "Clientes sem município",
-            _fmt(v.loc[sem_mun, "Cliente"].nunique()),
         )
 
     # ── Agregação por município ──────────────────────────────────────────
@@ -282,10 +279,10 @@ def renderizar(*, vendas, periodo, territorio, gdf_mun, filial_do_consultor,
     n_sem = int(sem_mun.sum())
     if n_sem:
         st.caption(
-            f"ℹ️ {n_sem} venda(s), {_brl(v.loc[sem_mun, 'Valor'].sum())}, sem "
-            "município identificado: o nome do cliente na base de vendas não "
-            "encontrou correspondência exata no cadastro do CRM. Entram nos "
-            "cards e no descritivo, mas não são desenhadas no mapa."
+            f"ℹ️ As {n_sem} venda(s) sem município vêm de "
+            f"{v.loc[sem_mun, 'Cliente'].nunique()} cliente(s) que o cadastro "
+            "do CRM não identifica. Entram nos cards e no descritivo, mas não "
+            "são desenhadas no mapa."
         )
 
     # ── Tabela de municípios ─────────────────────────────────────────────

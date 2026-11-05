@@ -1609,45 +1609,59 @@ with tab1:
         # =========================
         # CONTROLES DO MAPA
         # =========================
-        mostrar_dados = st.toggle("Mostrar dados no mapa", value=True)
+        # Tudo numa linha só, com os rótulos na mesma altura: o toggle leva
+        # um espaçador do tamanho do rótulo para alinhar com os rádios.
+        _rot = "font-size:14px; font-weight:600; margin:0 0 2px 0;"
+        _col_tg, _col_tipo, _col_sub = st.columns([1.3, 3.0, 2.7], gap="medium")
 
-        # ── Tipo de informação ────────────────────────────────────────────────
-        _lbl_m = "font-size:14px; font-weight:500; margin:0; padding-top:5px;"
-        st.markdown(
-            "<p style='font-size:14px; font-weight:600; margin:6px 0 2px 0;'>Tipo de informação</p>",
-            unsafe_allow_html=True,
-        )
-        _tipo_mapa = st.radio(
-            "Tipo de informação",
-            options=["Oportunidades", "Matriz de Performance", "Vendas realizadas"],
-            index=0,
-            horizontal=True,
-            key="mapa_tipo",
-            label_visibility="collapsed",
-        )
+        with _col_tg:
+            st.markdown(f"<p style='{_rot}'>&nbsp;</p>", unsafe_allow_html=True)
+            mostrar_dados = st.toggle("Mostrar dados no mapa", value=True)
 
-        # ── Subfiltro de cada tipo ───────────────────────────────────────────
-        somente_abertas = "Todos com oportunidades"
-        if _tipo_mapa == "Oportunidades":
-            somente_abertas = st.radio(
-                "Exibição de oportunidades (municípios)",
-                options=["Todos com oportunidades", "Somente em aberto"],
-                index=1,
-                horizontal=True,
+        with _col_tipo:
+            st.markdown(
+                f"<p style='{_rot}'>Tipo de informação</p>", unsafe_allow_html=True
             )
-        elif _tipo_mapa == "Vendas realizadas":
-            _vendas_hz = horizonte.carregar_vendas(
-                _sig(horizonte.ARQ_VENDAS, horizonte.ARQ_CLIENTES,
-                     horizonte.ARQ_ANALISADAS),
-                normalizar,
-            )
-            _periodo_hz = st.radio(
-                "Período",
-                options=["Todos"] + horizonte.anos_disponiveis(_vendas_hz),
+            _tipo_mapa = st.radio(
+                "Tipo de informação",
+                options=["Oportunidades", "Matriz de Performance", "Vendas realizadas"],
                 index=0,
                 horizontal=True,
-                key="mapa_periodo_vendas",
+                key="mapa_tipo",
+                label_visibility="collapsed",
             )
+
+        somente_abertas = "Todos com oportunidades"
+        with _col_sub:
+            if _tipo_mapa == "Oportunidades":
+                st.markdown(
+                    f"<p style='{_rot}'>Exibição de oportunidades</p>",
+                    unsafe_allow_html=True,
+                )
+                somente_abertas = st.radio(
+                    "Exibição de oportunidades (municípios)",
+                    options=["Todos com oportunidades", "Somente em aberto"],
+                    index=1,
+                    horizontal=True,
+                    label_visibility="collapsed",
+                )
+            elif _tipo_mapa == "Vendas realizadas":
+                _vendas_hz = horizonte.carregar_vendas(
+                    _sig(horizonte.ARQ_VENDAS, horizonte.ARQ_CLIENTES,
+                         horizonte.ARQ_ANALISADAS),
+                    normalizar,
+                )
+                st.markdown(
+                    f"<p style='{_rot}'>Período</p>", unsafe_allow_html=True
+                )
+                _periodo_hz = st.radio(
+                    "Período",
+                    options=["Todos"] + horizonte.anos_disponiveis(_vendas_hz),
+                    index=0,
+                    horizontal=True,
+                    key="mapa_periodo_vendas",
+                    label_visibility="collapsed",
+                )
 
         # =========================
         # MAPA INTERATIVO
